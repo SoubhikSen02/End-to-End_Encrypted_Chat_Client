@@ -7,7 +7,8 @@ For the ***server*** version, [click here](https://github.com/SoubhikSen02/End-t
 
 ## Features
 - User account registration, login and session management, account recovery, account settings updating, etc.
-- Personal chats between any 2 user accounts including read state indicators and end-to-end encryption of chat messages
+- Personal chats between any 2 user accounts including end-to-end encryption of chat messages, read state and online/offline indicators
+- Group chats between any number of user accounts also including end-to-end encryption of messages, read state indicators, coloured participant names, adding new users and leaving chat
 - Dynamic network implementation with detection and recovery from network issues
 - Provide a clean, customizable, and fully functional GUI with support for a huge selection of themes
 
