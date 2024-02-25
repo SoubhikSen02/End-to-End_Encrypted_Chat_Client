@@ -26,7 +26,7 @@ public class SelectFromSavedUsersDialog extends javax.swing.JDialog {
     private String[][] savedUsersList;
     int selectionMode;
     private ArrayList<AbstractButton> tableButtonsList = new ArrayList<>();
-    private NewChatCreateDialog parentDialog;
+    private Dialog parentDialog;
     /**
      * Creates new form SelectFromSavedUsersDialog
      */
@@ -34,7 +34,7 @@ public class SelectFromSavedUsersDialog extends javax.swing.JDialog {
         super(parent, modal);
         savedUsersList = savedUsers;
         this.selectionMode = selectionMode;
-        parentDialog = (NewChatCreateDialog)parent;
+        parentDialog = parent;
         initComponents();
 
         setTitle("Saved users");
@@ -277,7 +277,10 @@ public class SelectFromSavedUsersDialog extends javax.swing.JDialog {
                 JOptionPane.showMessageDialog(this, "Please select one user to continue.", "No user selected", JOptionPane.ERROR_MESSAGE);
                 return;
             }
-            parentDialog.setAccountIdFieldText(selectedAccountID);
+            if(parentDialog instanceof NewChatCreateDialog)
+                ((NewChatCreateDialog)parentDialog).setAccountIdFieldText(selectedAccountID);
+            else if(parentDialog instanceof GroupChatAddUserDialog)
+                ((GroupChatAddUserDialog)parentDialog).setAccountIdFieldText(selectedAccountID);
             dispose();
         }
         else if(selectionMode == MULTI_SELECTION_MODE)
@@ -296,7 +299,10 @@ public class SelectFromSavedUsersDialog extends javax.swing.JDialog {
                 return;
             }
             selectedAccountIDs = selectedAccountIDs.substring(0, selectedAccountIDs.length() - 1);
-            parentDialog.setAccountIdFieldText(selectedAccountIDs);
+            if(parentDialog instanceof NewChatCreateDialog)
+                ((NewChatCreateDialog)parentDialog).setAccountIdFieldText(selectedAccountIDs);
+            else if(parentDialog instanceof GroupChatAddUserDialog)
+                ((GroupChatAddUserDialog)parentDialog).setAccountIdFieldText(selectedAccountIDs);
             dispose();
         }
     }

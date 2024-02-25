@@ -5,8 +5,11 @@
 package com.chat.e2e;
 
 import javax.swing.*;
+import java.awt.*;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.Objects;
 
 /**
  *
@@ -57,6 +60,7 @@ public class AccountSettingsPanel extends javax.swing.JPanel {
         passwordChangeButton = new javax.swing.JButton();
         savedUsersLabel = new javax.swing.JLabel();
         savedUsersManageButton = new javax.swing.JButton();
+        accountIdCopyButton = new javax.swing.JButton();
 
         allowNewPersonalChatCheckBox.setFont(new java.awt.Font("Segoe UI", 1, 12)); // NOI18N
         if(ConfigManager.getAllowNewPersonalChat().equals("true"))
@@ -167,6 +171,16 @@ public class AccountSettingsPanel extends javax.swing.JPanel {
             }
         });
 
+        accountIdCopyButton.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(AccountSettingsPanel.class.getClassLoader().getResource("copy.png")))); // NOI18N
+        accountIdCopyButton.setToolTipText("Copy Account ID");
+        accountIdCopyButton.setActionCommand("");
+        accountIdCopyButton.setFocusPainted(false);
+        accountIdCopyButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                accountIdCopyButtonActionPerformed(evt);
+            }
+        });
+
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(this);
         this.setLayout(layout);
         layout.setHorizontalGroup(
@@ -186,13 +200,19 @@ public class AccountSettingsPanel extends javax.swing.JPanel {
                                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                                                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                                                         .addComponent(usernameField)
-                                                        .addComponent(accountIdField)
-                                                        .addComponent(passwordChangeButton, javax.swing.GroupLayout.PREFERRED_SIZE, 88, javax.swing.GroupLayout.PREFERRED_SIZE)
-                                                        .addComponent(savedUsersManageButton, javax.swing.GroupLayout.PREFERRED_SIZE, 88, javax.swing.GroupLayout.PREFERRED_SIZE)
                                                         .addGroup(layout.createSequentialGroup()
                                                                 .addComponent(displayNameField)
                                                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                                                                .addComponent(displayNameChangeButton, javax.swing.GroupLayout.PREFERRED_SIZE, 85, javax.swing.GroupLayout.PREFERRED_SIZE)))))
+                                                                .addComponent(displayNameChangeButton, javax.swing.GroupLayout.PREFERRED_SIZE, 85, javax.swing.GroupLayout.PREFERRED_SIZE))
+                                                        .addGroup(layout.createSequentialGroup()
+                                                                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                                                                        .addComponent(passwordChangeButton, javax.swing.GroupLayout.PREFERRED_SIZE, 88, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                                                        .addComponent(savedUsersManageButton, javax.swing.GroupLayout.PREFERRED_SIZE, 88, javax.swing.GroupLayout.PREFERRED_SIZE))
+                                                                .addGap(0, 0, Short.MAX_VALUE))
+                                                        .addGroup(layout.createSequentialGroup()
+                                                                .addComponent(accountIdField)
+                                                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                                                .addComponent(accountIdCopyButton, javax.swing.GroupLayout.PREFERRED_SIZE, 32, javax.swing.GroupLayout.PREFERRED_SIZE)))))
                                 .addGap(36, 36, 36))
         );
         layout.setVerticalGroup(
@@ -201,7 +221,8 @@ public class AccountSettingsPanel extends javax.swing.JPanel {
                                 .addGap(22, 22, 22)
                                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                                         .addComponent(accountIdLabel)
-                                        .addComponent(accountIdField, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                                        .addComponent(accountIdField, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                        .addComponent(accountIdCopyButton))
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                                         .addComponent(usernameLabel)
@@ -223,7 +244,7 @@ public class AccountSettingsPanel extends javax.swing.JPanel {
                                 .addComponent(allowNewPersonalChatCheckBox)
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                                 .addComponent(allowNewGroupChatCheckBox)
-                                .addContainerGap(28, Short.MAX_VALUE))
+                                .addContainerGap(27, Short.MAX_VALUE))
         );
     }// </editor-fold>
 
@@ -462,8 +483,25 @@ public class AccountSettingsPanel extends javax.swing.JPanel {
         settingsUpdator.execute();
     }
 
+    private void accountIdCopyButtonActionPerformed(java.awt.event.ActionEvent evt) {
+        // TODO add your handling code here:
+        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(accountIdField.getText()), null);
+        if(copyButtonPopup != null)
+            remove(copyButtonPopup);
+
+        copyButtonPopup = new JPopupMenu();
+        JMenuItem copyItem = new JMenuItem("Copied");
+        copyItem.setEnabled(false);
+        //copyItem.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        copyButtonPopup.add(copyItem);
+
+        add(copyButtonPopup);
+        copyButtonPopup.show(this, accountIdCopyButton.getX() + accountIdCopyButton.getWidth(), accountIdCopyButton.getY());
+    }
+
 
     // Variables declaration - do not modify
+    private javax.swing.JButton accountIdCopyButton;
     private javax.swing.JTextField accountIdField;
     private javax.swing.JLabel accountIdLabel;
     private javax.swing.JCheckBox allowNewGroupChatCheckBox;
@@ -477,6 +515,7 @@ public class AccountSettingsPanel extends javax.swing.JPanel {
     private javax.swing.JButton savedUsersManageButton;
     private javax.swing.JTextField usernameField;
     private javax.swing.JLabel usernameLabel;
+    private JPopupMenu copyButtonPopup = null;
     // End of variables declaration
 
     public JTextField getAccountIdField()

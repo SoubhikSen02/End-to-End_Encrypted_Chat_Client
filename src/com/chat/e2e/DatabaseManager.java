@@ -82,6 +82,11 @@ public class DatabaseManager
             {
                 makeUpdate("create table unsentReadReceipts(chat_id number(32) not null, message_id number(64) not null, primary key(chat_id, message_id));");
             }
+
+            if(!dbConnection.getMetaData().getTables(null, null, "unknownUsers", null).next())
+            {
+                makeUpdate("create table unknownUsers(account_id char(16) not null, primary key(account_id));");
+            }
         }
         catch(Exception e)
         {

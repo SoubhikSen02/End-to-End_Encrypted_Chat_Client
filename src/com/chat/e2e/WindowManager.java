@@ -53,6 +53,10 @@ public class WindowManager
             chatPanelReference = new ChatMainPanel();
             mainFrame.addToMainPanel(chatPanelReference, true);
 
+            // Improper server IP setting can delay return from the below function. If server IP is not within local
+            // network, then this call would return only after an unreachable error comes back which can take quite
+            // some time. So, if there is delay opening the app on multiple launches, check the server IP setting and
+            // correct it. Either use the correct server address if any or use the loopback address for testing.
             NetworkManager.connectToServer();
             SwingWorker<Void, Void> initialLoginWorker = new SwingWorker<Void, Void>() {
                 @Override
@@ -151,6 +155,7 @@ public class WindowManager
         chatPanelReference.getMessageReadReceiptsUpdatorThread().cancel(true);
         if(!chatPanelReference.getMessageReadReceiptsUpdatorThread().isDone())
             chatPanelReference.getMessageReadReceiptsUpdatorThread().cancel(true);
+        chatPanelReference.getUnknownInfoFinderTimer().cancel();
         chatPanelReference = null;
 
         currentPanel = "UserSelectionPanel";

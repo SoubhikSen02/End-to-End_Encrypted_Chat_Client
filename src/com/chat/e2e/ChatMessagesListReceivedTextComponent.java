@@ -30,6 +30,7 @@ public class ChatMessagesListReceivedTextComponent extends javax.swing.JPanel {
      */
     public ChatMessagesListReceivedTextComponent(String ID) {
         initComponents();
+        receivedMessageTextLabel.setContentType("text/html");
         messageID = ID;
         //receivedTextLabel.setText("<html>placeholderReceivedText");
         //receivedTextLabel.setPreferredSize(new java.awt.Dimension(135, 15));

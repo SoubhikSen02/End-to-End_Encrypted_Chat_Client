@@ -15,7 +15,7 @@ public class ConfigManager
 
 
 
-    private static String clientVersion = "1.0";
+    private static String clientVersion = "1.2.1";
     private static String accountID = "0000000000000000";
     private static String accountUsername = "anonymous";
     private static String accountDisplayName = "anonymous";
@@ -110,7 +110,7 @@ public class ConfigManager
         updateConfig();
         if(WindowManager.getCurrentPanel().equals("UserChatPanel"))
         {
-            WindowManager.getChatPanelReference().updateFromDB();
+            WindowManager.getChatPanelReference().updateFromDB(ChatMainPanel.KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_LOADING_OLD_MESSAGES);
         }
     }
 
@@ -134,7 +134,7 @@ public class ConfigManager
         updateConfig();
         ThemeManager.changeTheme(currentTheme, true);
         if(WindowManager.getCurrentPanel().equals("UserChatPanel"))
-            WindowManager.getChatPanelReference().updateFromDB();
+            WindowManager.getChatPanelReference().updateFromDB(ChatMainPanel.KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
     }
 
     synchronized public static void setPreviousWindowState(String newState)

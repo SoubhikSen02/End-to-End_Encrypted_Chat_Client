@@ -16,6 +16,8 @@ public class ThemeManager
         //UIManager.put( "Panel.arc", 99 );
         UIManager.put( "ScrollBar.showButtons", true );
         //UIManager.put( "Label.font", new Font("Calibri", Font.PLAIN, 12) );
+        UIManager.put( "MenuItem.minimumIconSize", new Dimension() );
+        //UIManager.put("Label.arc", 999);
     }
 
     public static void changeTheme(String newTheme, boolean animated)

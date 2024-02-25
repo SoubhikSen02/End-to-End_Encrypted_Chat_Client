@@ -241,8 +241,10 @@ public class ChatListComponentPanel extends javax.swing.JPanel {
 
     private void formMouseClicked(java.awt.event.MouseEvent evt) {
         // TODO add your handling code here:
-        if(!isActive)
-            makeChatActive();
+        if(SwingUtilities.isLeftMouseButton(evt)) {
+            if (!isActive)
+                makeChatActive();
+        }
     }
 
     private void formMouseEntered(java.awt.event.MouseEvent evt) {
@@ -265,8 +267,10 @@ public class ChatListComponentPanel extends javax.swing.JPanel {
 
     private void chatNameLabelMouseClicked(java.awt.event.MouseEvent evt) {
         // TODO add your handling code here:
-        if(!isActive)
-            makeChatActive();
+        if(SwingUtilities.isLeftMouseButton(evt)) {
+            if (!isActive)
+                makeChatActive();
+        }
     }
 
     private void chatNameLabelMouseEntered(java.awt.event.MouseEvent evt) {
@@ -281,8 +285,10 @@ public class ChatListComponentPanel extends javax.swing.JPanel {
 
     private void chatLastMessageLabelMouseClicked(java.awt.event.MouseEvent evt) {
         // TODO add your handling code here:
-        if(!isActive)
-            makeChatActive();
+        if(SwingUtilities.isLeftMouseButton(evt)) {
+            if (!isActive)
+                makeChatActive();
+        }
     }
 
     private void chatLastMessageLabelMouseEntered(java.awt.event.MouseEvent evt) {
@@ -297,8 +303,10 @@ public class ChatListComponentPanel extends javax.swing.JPanel {
 
     private void chatIconLabelMouseClicked(java.awt.event.MouseEvent evt) {
         // TODO add your handling code here:
-        if(!isActive)
-            makeChatActive();
+        if(SwingUtilities.isLeftMouseButton(evt)) {
+            if (!isActive)
+                makeChatActive();
+        }
     }
 
     private void chatIconLabelMouseEntered(java.awt.event.MouseEvent evt) {
@@ -337,8 +345,10 @@ public class ChatListComponentPanel extends javax.swing.JPanel {
 
     private void chatLastMessageTimestampMouseClicked(java.awt.event.MouseEvent evt) {
         // TODO add your handling code here:
-        if(!isActive)
-            makeChatActive();
+        if(SwingUtilities.isLeftMouseButton(evt)) {
+            if (!isActive)
+                makeChatActive();
+        }
     }
 
     private void chatLastMessageTimestampMouseEntered(java.awt.event.MouseEvent evt) {

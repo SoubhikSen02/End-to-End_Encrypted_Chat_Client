@@ -823,17 +823,17 @@ public class NetworkManager
             participants = participants.substring(0, participants.length() - 1);
 
             //TODO: Find a way to generate and synchronize chat key and iv either locally or over the network
-            String chatKey;
-            String chatIV;
+            String chatKey = "";
+            String chatIV = "";
             if(chatType.equals("PERSONAL"))
             {
-                chatKey = EncryptionManager.generateDeterministicKey(ConfigManager.getAccountID(), participantsList[0][0]);
-                chatIV = EncryptionManager.generateDeterministicInitializationVector(ConfigManager.getAccountID(), participantsList[0][0]);
+                chatKey = EncryptionManager.generateDeterministicKeyForPersonalChats(ConfigManager.getAccountID(), participantsList[0][0]);
+                chatIV = EncryptionManager.generateDeterministicInitializationVectorForPersonalChats(ConfigManager.getAccountID(), participantsList[0][0]);
             }
-            else
+            else if(chatType.equals("GROUP"))
             {
-                chatKey = "";
-                chatIV = "";
+                chatKey = EncryptionManager.generateDeterministicKeyForGroupChats(chatName, chatID);
+                chatIV = EncryptionManager.generateDeterministicInitializationVectorForGroupChats(chatName, chatID);
             }
 
             //TODO: Test how database reacts for inserting into both chat and savedUsers when the chat's ID or the user's ID is already there in the database
@@ -1190,8 +1190,8 @@ public class NetworkManager
         if(!success)
             return null;
 
-        String encryptionKey = EncryptionManager.generateDeterministicKey(ConfigManager.getAccountID(), chatParticipant);
-        String encryptionIV = EncryptionManager.generateDeterministicInitializationVector(ConfigManager.getAccountID(), chatParticipant);
+        String encryptionKey = EncryptionManager.generateDeterministicKeyForPersonalChats(ConfigManager.getAccountID(), chatParticipant);
+        String encryptionIV = EncryptionManager.generateDeterministicInitializationVectorForPersonalChats(ConfigManager.getAccountID(), chatParticipant);
 
         DatabaseManager.makeUpdate("insert into chat values(" + chatID + ", '" + encryptionKey + "', '" + encryptionIV + "', '" + chatType + "', '" + chatName + "', '" + chatParticipant + "', 0);");
         DatabaseManager.makeUpdate("insert into savedUsers values('" + chatParticipant + "', '" + chatName + "');");
@@ -1471,6 +1471,378 @@ public class NetworkManager
             return null;
         if(!reply.equals("OK"))
             return false;
+
+        return true;
+    }
+
+    synchronized public static Boolean checkIfUserIsOnline(String accountID)
+    {
+        if(!connected)
+            return null;
+        if(!loggedIn)
+            return null;
+
+        boolean success = sendToServer("CHKONL " + accountID);
+        if(!success)
+            return null;
+        String reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("OK"))
+            return false;
+
+        return true;
+    }
+
+    synchronized public static Boolean createNewGroupChat(String chatType, String chatName, String chatParticipantsList)
+    {
+        if(!connected)
+            return null;
+        if(!loggedIn)
+            return null;
+
+        boolean success = sendToServer("CREATGCH");
+        if(!success)
+            return null;
+        String reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("OK"))
+            return false;
+
+        success = sendToServer("CHATTYPE " + chatType);
+        if(!success)
+            return null;
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("OK"))
+            return false;
+
+        success = sendToServer("CHATNAME " + chatName);
+        if(!success)
+            return null;
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("OK"))
+            return false;
+
+        success = sendToServer("PPLACCID " + chatParticipantsList);
+        if(!success)
+            return null;
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("OK"))
+            return false;
+
+        success = sendToServer("DONE");
+        if(!success)
+            return null;
+
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(reply.equals("ERROR"))
+            return false;
+        String chatID = reply.substring(7);
+        success = sendToServer("OK");
+        if(!success)
+            return null;
+
+        String[] otherChatParticipantsID = chatParticipantsList.split(",");
+        String[] otherChatParticipantsDisplayName = new String[otherChatParticipantsID.length];
+        for(int i = 0; i < otherChatParticipantsID.length; i++)
+        {
+            reply = receiveFromServer();
+            if(reply == null)
+                return null;
+            if(reply.equals("ERROR"))
+                return false;
+            otherChatParticipantsDisplayName[i] = reply.substring(9);
+            success = sendToServer("OK");
+            if(!success)
+                return null;
+        }
+
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("DONE"))
+            return false;
+        success = sendToServer("OK");
+        if(!success)
+            return null;
+
+        String encryptionKey = EncryptionManager.generateDeterministicKeyForGroupChats(chatName, chatID);
+        String encryptionIV = EncryptionManager.generateDeterministicInitializationVectorForGroupChats(chatName, chatID);
+
+        DatabaseManager.makeUpdate("insert into chat values(" + chatID + ", '" + encryptionKey + "', '" + encryptionIV + "', '" + chatType + "', '" + chatName + "', '" + chatParticipantsList + "', 0);");
+        for(int i = 0; i < otherChatParticipantsID.length; i++)
+        {
+            DatabaseManager.makeUpdate("insert into savedUsers values('" + otherChatParticipantsID[i] + "', '" + otherChatParticipantsDisplayName[i] + "');");
+        }
+        DatabaseManager.initializeDB();
+
+        return true;
+    }
+
+    synchronized public static Boolean checkForChatInfoUpdates()
+    {
+        if(!connected || busy)
+            return null;
+        if(!loggedIn)
+            return null;
+
+        boolean success = sendToServer("CHKCHUPT");
+        if(!success)
+            return null;
+        String reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        success = sendToServer("OK");
+        if(!success)
+            return null;
+        reply = reply.substring(7);
+        int numberOfNewUpdates = Integer.parseInt(reply);
+        if(numberOfNewUpdates == 0)
+            return false;
+
+        for(int i = 0; i < numberOfNewUpdates; i++)
+        {
+            reply = receiveFromServer();
+            if(reply == null)
+                return null;
+            String chatID = reply.substring(7);
+            success = sendToServer("OK");
+            if(!success)
+                return null;
+
+            reply = receiveFromServer();
+            if(reply == null)
+                return null;
+            String chatType = reply.substring(9);
+            success = sendToServer("OK");
+            if(!success)
+                return null;
+
+            reply = receiveFromServer();
+            if(reply == null)
+                return null;
+            String chatName = reply.substring(9);
+            success = sendToServer("OK");
+            if(!success)
+                return null;
+
+            reply = receiveFromServer();
+            if(reply == null)
+                return null;
+            String numberOfParticipants = reply.substring(9);
+            success = sendToServer("OK");
+            if(!success)
+                return null;
+
+            String[][] participantsList = new String[Integer.parseInt(numberOfParticipants)][2];
+            for(int j = 0; j < Integer.parseInt(numberOfParticipants); j++)
+            {
+                reply = receiveFromServer();
+                if(reply == null)
+                    return null;
+                participantsList[j][0] = reply.substring(6);
+                success = sendToServer("OK");
+                if(!success)
+                    return null;
+
+                reply = receiveFromServer();
+                if(reply == null)
+                    return null;
+                participantsList[j][1] = reply.substring(8);
+                success = sendToServer("OK");
+                if(!success)
+                    return null;
+            }
+            String participants = "";
+            for(int j = 0; j < participantsList.length; j++)
+            {
+                participants = participants + participantsList[j][0] + ",";
+            }
+            participants = participants.substring(0, participants.length() - 1);
+
+            DatabaseManager.makeUpdate("update chat set chat_type = '" + chatType + "', chat_name = '" + chatName + "', chat_participants = '" + participants + "' where chat_id = " + chatID + ";");
+
+            for(int j = 0; j < participantsList.length; j++)
+            {
+                String ID = participantsList[j][0];
+                String name = participantsList[j][1];
+                DatabaseManager.makeUpdate("insert into savedUsers values('" + ID + "', '" + name + "');");
+            }
+        }
+
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("DONE"))
+            return false;
+        success = sendToServer("OK");
+        if(!success)
+            return null;
+
+        DatabaseManager.initializeDB();
+
+        return true;
+    }
+
+    synchronized public static Boolean addNewUserToGroupChat(String chatID, String newUserID)
+    {
+        if(!connected)
+            return null;
+        if(!loggedIn)
+            return null;
+
+        boolean success = sendToServer("ADDGCUSR");
+        if(!success)
+            return null;
+        String reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("OK"))
+            return false;
+
+        success = sendToServer("CHATID " + chatID);
+        if(!success)
+            return null;
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("OK"))
+            return false;
+
+        success = sendToServer("NEWUSRID " + newUserID);
+        if(!success)
+            return null;
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("OK"))
+            return false;
+
+        success = sendToServer("DONE");
+        if(!success)
+            return null;
+
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(reply.equals("ERROR"))
+            return false;
+        String newUserDisplayName = reply.substring(9);
+        success = sendToServer("OK");
+        if(!success)
+            return null;
+
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("DONE"))
+            return false;
+        success = sendToServer("OK");
+        if(!success)
+            return null;
+
+        DatabaseManager.makeUpdate("insert into savedUsers values('" + newUserID + "', '" + newUserDisplayName + "');");
+        String[][] currentChatParticipants = DatabaseManager.makeQuery("select chat_participants from chat where chat_id = " + chatID + ";");
+        if(currentChatParticipants != null && currentChatParticipants.length > 0) {
+            String newParticipantList = currentChatParticipants[0][0] + "," + newUserID;
+            if(newParticipantList.charAt(0) == ',')
+            {
+                newParticipantList = newParticipantList.substring(1);
+            }
+            DatabaseManager.makeUpdate("update chat set chat_participants = '" + newParticipantList + "' where chat_id = " + chatID + ";");
+        }
+
+        return true;
+    }
+
+    synchronized public static Boolean leaveFromGroupChat(String chatID)
+    {
+        if(!connected)
+            return null;
+        if(!loggedIn)
+            return null;
+
+        boolean success = sendToServer("LEAVEGCH");
+        if(!success)
+            return null;
+        String reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("OK"))
+            return false;
+
+        success = sendToServer("CHATID " + chatID);
+        if(!success)
+            return null;
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("OK"))
+            return false;
+
+        success = sendToServer("DONE");
+        if(!success)
+            return null;
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("OK"))
+            return false;
+
+        DatabaseManager.makeUpdate("update chat set chat_type = 'GROUP_LF' where chat_id = " + chatID + ";");
+
+        return true;
+    }
+
+    synchronized public static Boolean retrieveUnknownUserDisplayName(String userAccountID)
+    {
+        if(!connected)
+            return null;
+        if(!loggedIn)
+            return null;
+
+        boolean success = sendToServer("GETDSPNM " + userAccountID);
+        if(!success)
+            return null;
+        String reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("OK"))
+            return false;
+
+        success = sendToServer("DONE");
+        if(!success)
+            return null;
+
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(reply.equals("ERROR"))
+            return false;
+        String userDisplayName = reply.substring(9);
+        success = sendToServer("OK");
+        if(!success)
+            return null;
+
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("DONE"))
+            return false;
+        success = sendToServer("OK");
+        if(!success)
+            return null;
+
+        DatabaseManager.makeUpdate("insert into savedUsers values('" + userAccountID + "', '" + userDisplayName + "');");
 
         return true;
     }

@@ -11,7 +11,9 @@ import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import javax.swing.text.DefaultCaret;
+import javax.swing.text.Style;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
 import java.awt.*;
 import java.awt.event.*;
 import java.math.BigInteger;
@@ -19,7 +21,6 @@ import java.sql.Date;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
-import java.time.temporal.TemporalField;
 import java.util.*;
 import java.util.Timer;
 
@@ -31,6 +32,9 @@ import java.util.Timer;
 public class ChatMainPanel extends javax.swing.JPanel {
 
     final public static int KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_LOADING_OLD_MESSAGES = 1;
+    final public static int KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON = 2;
+    //final public static int KEEP_CHAT_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING = 3;
+    //final public static int
 
 
     private SwingWorker<Void, Void> networkStatusUpdater;
@@ -94,6 +98,23 @@ public class ChatMainPanel extends javax.swing.JPanel {
 
 
 
+    private Timer unknownInfoFinderTimer;
+    private TimerTask unknownInfoCheckAndFindTask;
+    public Timer getUnknownInfoFinderTimer()
+    {
+        return unknownInfoFinderTimer;
+    }
+
+
+
+    private HashMap<String, Color> currentChatParticipantsColorsMapping = new HashMap<>();
+
+
+
+    //private boolean
+
+
+
     private ArrayList<ChatListComponentPanel> chatListComponents = new ArrayList<>();
     private ChatListComponentPanel activeChatComponentReference = null;
     private long numberOfLoadedMessagesInActiveChat = 0;
@@ -112,7 +133,9 @@ public class ChatMainPanel extends javax.swing.JPanel {
             }
         }
     };
-    int currentScrollBarPosition;
+    int messageListCurrentScrollBarPositionFromBottom;
+    int messageListCurrentScrollBarPositionFromTop;
+    boolean forceScrollDownMessageList;
 
 
     public ChatListComponentPanel getActiveChatComponentReference()
@@ -214,11 +237,15 @@ public class ChatMainPanel extends javax.swing.JPanel {
                             {
                                 Boolean success = NetworkManager.checkForNewChats();
                                 if(success != null && success)
-                                    updateFromDB();
+                                    updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+
+                                success = NetworkManager.checkForChatInfoUpdates();
+                                if(success != null && success)
+                                    updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
 
                                 success = NetworkManager.checkForNewMessages();
                                 if(success != null && success)
-                                    updateFromDB();
+                                    updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
                             }
                         }
                         Thread.sleep((Integer.parseInt(ConfigManager.getConnectionProbeTimePeriod()) * 1000L) > 3000? 3000:(Long.parseLong(ConfigManager.getConnectionProbeTimePeriod()) * 1000));
@@ -256,12 +283,21 @@ public class ChatMainPanel extends javax.swing.JPanel {
                             {
                                 Boolean success = NetworkManager.checkForNewReadReceipts();
                                 if(success != null && success)
-                                    updateFromDB();
+                                    updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
 
                                 while(!readReceiptsToBeSent.isEmpty())
                                 {
                                     String chatID = readReceiptsToBeSent.get(0)[0];
                                     String messageID = readReceiptsToBeSent.get(0)[1];
+
+                                    //disable read receipt 3 for group chats by not actually sending any such receipts to server
+//                                    String[][] chatType = DatabaseManager.makeQuery("select chat_type from chat where chat_id = " + chatID + ";");
+//                                    if(chatType == null || chatType.length == 0 || chatType[0][0].equals("GROUP"))
+//                                    {
+//                                        DatabaseManager.makeUpdate("delete from unsentReadReceipts where chat_id = " + chatID + " and message_id = " + messageID + ";");
+//                                        readReceiptsToBeSent.remove(0);
+//                                        continue;
+//                                    }
 
                                     success = NetworkManager.sendNewReadReceipts(chatID, messageID);
                                     if(success == null || !success)
@@ -292,11 +328,36 @@ public class ChatMainPanel extends javax.swing.JPanel {
         chatPanelUpdateTask = new TimerTask() {
             @Override
             public void run() {
-                updateFromDB();
+                updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
             }
         };
         periodicPanelUpdatorTimer.scheduleAtFixedRate(chatPanelUpdateTask, Date.valueOf(nextDayDate), 86400000);
 
+
+        unknownInfoFinderTimer = new Timer();
+        unknownInfoCheckAndFindTask = new TimerTask() {
+            @Override
+            public void run() {
+                String[][] unknownUsers = DatabaseManager.makeQuery("select * from unknownUsers;");
+                if(unknownUsers == null || unknownUsers.length == 0)
+                {
+                    return;
+                }
+                boolean anyUpdates = false;
+                for(int i = 0; i < unknownUsers.length; i++)
+                {
+                    Boolean success = NetworkManager.retrieveUnknownUserDisplayName(unknownUsers[i][0]);
+                    if(success == null)
+                        return;
+                    if(!success)
+                        continue;
+                    anyUpdates = true;
+                }
+                if(anyUpdates)
+                    updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+            }
+        };
+        unknownInfoFinderTimer.schedule(unknownInfoCheckAndFindTask, 10000, 60000);
 
         String[][] chatList = DatabaseManager.makeQuery("select chat_id, chat_type, chat_name, chat_participants from chat order by last_message_timestamp desc;");
         if(chatList != null && chatList.length > 0)
@@ -313,10 +374,45 @@ public class ChatMainPanel extends javax.swing.JPanel {
                     Calendar calendarInstance = Calendar.getInstance();
                     calendarInstance.setTimeInMillis(Long.parseLong(chatInfo[0][0]));
                     DateFormat formatter = new SimpleDateFormat("dd/MM/yy hh:mm a");
+                    if(chatList[i][1].equals("PERSONAL"))
+                    {
+                        chatListComponent.getChatIconLabel().setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatListComponentPanel.class.getClassLoader().getResource("user.png"))));
+                    }
+                    else
+                    {
+                        chatListComponent.getChatIconLabel().setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatListComponentPanel.class.getClassLoader().getResource("group.png"))));
+                    }
                     chatListComponent.getChatLastMessageTimestamp().setText(chatInfo[0][0]);
                     //chatListComponent.getChatLastMessageTimestamp().setToolTipText((formatter.format(calendarInstance.getTime())).toUpperCase());
                     //TODO: add later functionality to verify type of message and show message content accordingly
-                    chatListComponent.getChatLastMessageLabel().setText(chatInfo[0][1]);
+                    if(chatList[i][1].equals("PERSONAL")) {
+                        chatListComponent.getChatLastMessageLabel().setText(chatInfo[0][1]);
+                    }
+                    else
+                    {
+                        String senderID = chatInfo[0][2];
+                        if(senderID.equals("0000000000000000"))
+                        {
+                            chatListComponent.getChatLastMessageLabel().setText(chatInfo[0][1]);
+                        }
+                        else if(senderID.equals(ConfigManager.getAccountID()))
+                        {
+                            chatListComponent.getChatLastMessageLabel().setText("You: " + chatInfo[0][1]);
+                        }
+                        else
+                        {
+                            String[][] senderName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + senderID + "';");
+                            if(senderName == null || senderName.length == 0)
+                            {
+                                chatListComponent.getChatLastMessageLabel().setText(senderID + ": " + chatInfo[0][1]);
+                                DatabaseManager.makeUpdate("insert into unknownUsers values('" + senderID + "');");
+                            }
+                            else
+                            {
+                                chatListComponent.getChatLastMessageLabel().setText(senderName[0][0] + ": " + chatInfo[0][1]);
+                            }
+                        }
+                    }
                     if(chatInfo[0][2].equals(ConfigManager.getAccountID()))
                     {
                         if(Integer.parseInt(chatInfo[0][3]) == 3)
@@ -444,7 +540,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
                                         else if(success)
                                         {
                                             messagesToBeSentList.remove(0);
-                                            updateFromDB();
+                                            updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
                                         }
                                     }
                                     else
@@ -570,11 +666,11 @@ public class ChatMainPanel extends javax.swing.JPanel {
                                         {
                                             Boolean success = NetworkManager.checkForNewChats();
                                             if(success != null && success)
-                                                updateFromDB();
+                                                updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
 
                                             success = NetworkManager.checkForNewMessages();
                                             if(success != null && success)
-                                                updateFromDB();
+                                                updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
                                         }
                                     }
                                     Thread.sleep((Integer.parseInt(ConfigManager.getConnectionProbeTimePeriod()) * 1000L) > 3000? 3000:(Long.parseLong(ConfigManager.getConnectionProbeTimePeriod()) * 1000));
@@ -620,7 +716,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
                                                     else if(success)
                                                     {
                                                         messagesToBeSentList.remove(0);
-                                                        updateFromDB();
+                                                        updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
                                                     }
                                                 }
                                                 else
@@ -659,12 +755,21 @@ public class ChatMainPanel extends javax.swing.JPanel {
                                         {
                                             Boolean success = NetworkManager.checkForNewReadReceipts();
                                             if(success != null && success)
-                                                updateFromDB();
+                                                updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
 
                                             while(!readReceiptsToBeSent.isEmpty())
                                             {
                                                 String chatID = readReceiptsToBeSent.get(0)[0];
                                                 String messageID = readReceiptsToBeSent.get(0)[1];
+
+                                                //disable read receipt 3 for group chats by not actually sending any such receipts to server
+//                                                String[][] chatType = DatabaseManager.makeQuery("select chat_type from chat where chat_id = " + chatID + ";");
+//                                                if(chatType == null || chatType.length == 0 || chatType[0][0].equals("GROUP"))
+//                                                {
+//                                                    DatabaseManager.makeUpdate("delete from unsentReadReceipts where chat_id = " + chatID + " and message_id = " + messageID + ";");
+//                                                    readReceiptsToBeSent.remove(0);
+//                                                    continue;
+//                                                }
 
                                                 success = NetworkManager.sendNewReadReceipts(chatID, messageID);
                                                 if(success == null || !success)
@@ -694,6 +799,17 @@ public class ChatMainPanel extends javax.swing.JPanel {
         otherThreadsCrashHandler.schedule(otherThreadsRestartTask, 30000, 30000);
 
 
+        KeyAdapter enterKeyListener = new KeyAdapter() {
+            @Override
+            public void keyReleased(KeyEvent e) {
+                if(e.getKeyCode() == KeyEvent.VK_ENTER && chatSendMessageButton.isEnabled())
+                {
+                    chatSendMessageButton.doClick();
+                }
+            }
+        };
+        //chatSendMessageButton.addKeyListener(enterKeyListener);
+        chatSendMessageField.addKeyListener(enterKeyListener);
     }
 
     private ChatMainPanel getSelfReference()
@@ -723,7 +839,8 @@ public class ChatMainPanel extends javax.swing.JPanel {
         chatHeaderPanel = new javax.swing.JPanel();
         chatHeaderIconLabel = new javax.swing.JLabel();
         chatHeaderNameLabel = new javax.swing.JLabel();
-        ChatHeaderParticipantOrOnlineLabel = new javax.swing.JLabel();
+        chatHeaderParticipantOrOnlineLabel = new javax.swing.JLabel();
+        chatHeaderMoreOptionsButton = new javax.swing.JButton();
         chatSendMessagePanel = new javax.swing.JPanel();
         chatSendMessageOtherTypesToggleButton = new javax.swing.JToggleButton();
         chatSendMessageField = new javax.swing.JTextField();
@@ -760,7 +877,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
                                 .addContainerGap()
                                 .addComponent(newChatButton, javax.swing.GroupLayout.PREFERRED_SIZE, 36, javax.swing.GroupLayout.PREFERRED_SIZE)
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                                .addComponent(deleteChatButton, javax.swing.GroupLayout.PREFERRED_SIZE, 37, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                .addComponent(deleteChatButton, javax.swing.GroupLayout.PREFERRED_SIZE, 36, javax.swing.GroupLayout.PREFERRED_SIZE)
                                 .addContainerGap(143, Short.MAX_VALUE))
         );
         chatListControlsPanelLayout.setVerticalGroup(
@@ -768,7 +885,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
                         .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, chatListControlsPanelLayout.createSequentialGroup()
                                 .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                                 .addGroup(chatListControlsPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                                        .addComponent(deleteChatButton)
+                                        .addComponent(deleteChatButton, javax.swing.GroupLayout.PREFERRED_SIZE, 34, javax.swing.GroupLayout.PREFERRED_SIZE)
                                         .addComponent(newChatButton))
                                 .addGap(8, 8, 8))
         );
@@ -924,9 +1041,9 @@ public class ChatMainPanel extends javax.swing.JPanel {
             }
         });
 
-        ChatHeaderParticipantOrOnlineLabel.setText("placeholderOnlineStatusOrListOfParticipants");
-        ChatHeaderParticipantOrOnlineLabel.setToolTipText("placeholderOnlineStatusOrListOfParticipantsFull");
-        ChatHeaderParticipantOrOnlineLabel.addMouseListener(new java.awt.event.MouseAdapter() {
+        chatHeaderParticipantOrOnlineLabel.setText("placeholderOnlineStatusOrListOfParticipants");
+        chatHeaderParticipantOrOnlineLabel.setToolTipText("placeholderOnlineStatusOrListOfParticipantsFull");
+        chatHeaderParticipantOrOnlineLabel.addMouseListener(new java.awt.event.MouseAdapter() {
             public void mouseClicked(java.awt.event.MouseEvent evt) {
                 ChatHeaderParticipantOrOnlineLabelMouseClicked(evt);
             }
@@ -944,6 +1061,17 @@ public class ChatMainPanel extends javax.swing.JPanel {
             }
         });
 
+        chatHeaderMoreOptionsButton.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("more.png")))); // NOI18N
+        chatHeaderMoreOptionsButton.setToolTipText("More options");
+        chatHeaderMoreOptionsButton.setVisible(false);
+        chatHeaderMoreOptionsButton.setFocusPainted(false);
+        chatHeaderMoreOptionsButton.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                chatHeaderMoreOptionsButtonActionPerformed(e);
+            }
+        });
+
         javax.swing.GroupLayout chatHeaderPanelLayout = new javax.swing.GroupLayout(chatHeaderPanel);
         chatHeaderPanel.setLayout(chatHeaderPanelLayout);
         chatHeaderPanelLayout.setHorizontalGroup(
@@ -954,7 +1082,9 @@ public class ChatMainPanel extends javax.swing.JPanel {
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                                 .addGroup(chatHeaderPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                                         .addComponent(chatHeaderNameLabel, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                                        .addComponent(ChatHeaderParticipantOrOnlineLabel, javax.swing.GroupLayout.DEFAULT_SIZE, 409, Short.MAX_VALUE))
+                                        .addComponent(chatHeaderParticipantOrOnlineLabel, javax.swing.GroupLayout.DEFAULT_SIZE, 377, Short.MAX_VALUE))
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                .addComponent(chatHeaderMoreOptionsButton, javax.swing.GroupLayout.PREFERRED_SIZE, 26, javax.swing.GroupLayout.PREFERRED_SIZE)
                                 .addContainerGap())
         );
         chatHeaderPanelLayout.setVerticalGroup(
@@ -962,11 +1092,15 @@ public class ChatMainPanel extends javax.swing.JPanel {
                         .addGroup(chatHeaderPanelLayout.createSequentialGroup()
                                 .addContainerGap()
                                 .addGroup(chatHeaderPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                                        .addGroup(chatHeaderPanelLayout.createSequentialGroup()
+                                        .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, chatHeaderPanelLayout.createSequentialGroup()
                                                 .addComponent(chatHeaderNameLabel)
                                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                                                .addComponent(ChatHeaderParticipantOrOnlineLabel))
-                                        .addComponent(chatHeaderIconLabel, javax.swing.GroupLayout.PREFERRED_SIZE, 42, javax.swing.GroupLayout.PREFERRED_SIZE))
+                                                .addComponent(chatHeaderParticipantOrOnlineLabel))
+                                        .addGroup(chatHeaderPanelLayout.createSequentialGroup()
+                                                .addGroup(chatHeaderPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                                                        .addComponent(chatHeaderIconLabel, javax.swing.GroupLayout.PREFERRED_SIZE, 42, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                                        .addComponent(chatHeaderMoreOptionsButton, javax.swing.GroupLayout.PREFERRED_SIZE, 42, javax.swing.GroupLayout.PREFERRED_SIZE))
+                                                .addGap(0, 0, Short.MAX_VALUE)))
                                 .addContainerGap())
         );
 
@@ -1083,6 +1217,12 @@ public class ChatMainPanel extends javax.swing.JPanel {
                                                 .addComponent(appStatusPanel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)))
                                 .addContainerGap())
         );
+
+
+
+
+
+
     }// </editor-fold>
 
     public void hideMessagesPanel()
@@ -1131,11 +1271,169 @@ public class ChatMainPanel extends javax.swing.JPanel {
         }
     }
 
+    private void chatHeaderMoreOptionsButtonActionPerformed(MouseEvent e)
+    {
+        if(SwingUtilities.isLeftMouseButton(e) && activeChatComponentReference != null)
+        {
+            String[][] chatType = DatabaseManager.makeQuery("select chat_type from chat where chat_id = " + activeChatComponentReference.getChatID() + ";");
+            if(chatType == null || chatType.length == 0)
+            {
+                return;
+            }
+
+            if(chatHeaderMoreOptionsMenu != null)
+                remove(chatHeaderMoreOptionsMenu);
+
+            chatHeaderMoreOptionsMenu = new JPopupMenu();
+
+            if(chatType[0][0].equals("PERSONAL"))
+            {
+                // TODO: Add options for personal chat
+                //  Currently, this button is disabled for personal chats
+                //  So this case will never get executed
+                //chatHeaderMoreOptionsMenu.removeAll();
+            }
+            else if(chatType[0][0].contains("GROUP"))
+            {
+                //chatHeaderMoreOptionsMenu.removeAll();
+
+                JMenuItem addNewUserOption = new JMenuItem("Add new user");
+                addNewUserOption.addActionListener(new ActionListener() {
+                    @Override
+                    public void actionPerformed(ActionEvent e) {
+                        addNewUserToGroupChatOptionSelected();
+                    }
+                });
+                chatHeaderMoreOptionsMenu.add(addNewUserOption);
+
+                JMenuItem leaveChatOption = new JMenuItem("Leave chat");
+                leaveChatOption.addActionListener(new ActionListener() {
+                    @Override
+                    public void actionPerformed(ActionEvent e) {
+                        leaveGroupChatOptionSelected();
+                    }
+                });
+                chatHeaderMoreOptionsMenu.add(leaveChatOption);
+
+                add(chatHeaderMoreOptionsMenu);
+
+                chatHeaderMoreOptionsMenu.show(chatHeaderMoreOptionsButton, e.getX(), e.getY());
+            }
+        }
+    }
+
+    private void addNewUserToGroupChatOptionSelected()
+    {
+        SwingWorker<Void, Void> newUserAddDialogCreator = new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                if(!NetworkManager.isConnected())
+                {
+                    JOptionPane.showMessageDialog(Main.getMainFrame(), "The server is currently unavailable.\nPlease check your connection or try again later.",
+                            "Server unavailable", JOptionPane.ERROR_MESSAGE);
+                    return null;
+                }
+                if(!NetworkManager.isLoggedIn())
+                {
+                    JOptionPane.showMessageDialog(Main.getMainFrame(), "User is currently not logged in with the server.\nPlease try again a little later.",
+                            "User not logged in", JOptionPane.ERROR_MESSAGE);
+                    return null;
+                }
+                if(NetworkManager.isBusy())
+                {
+                    JOptionPane.showMessageDialog(Main.getMainFrame(), "The server is currently busy.\nPlease try again later.",
+                            "Server busy", JOptionPane.ERROR_MESSAGE);
+                    return null;
+                }
+
+                GroupChatAddUserDialog addUserDialog = new GroupChatAddUserDialog(Main.getMainFrame(), true, getSelfReference());
+
+                return null;
+            }
+        };
+        newUserAddDialogCreator.execute();
+    }
+
+    private void leaveGroupChatOptionSelected()
+    {
+        SwingWorker<Void, Void> leaveGroupChatHandler = new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                if(!NetworkManager.isConnected())
+                {
+                    JOptionPane.showMessageDialog(Main.getMainFrame(), "The server is currently unavailable.\nPlease check your connection or try again later.",
+                            "Server unavailable", JOptionPane.ERROR_MESSAGE);
+                    return null;
+                }
+                if(!NetworkManager.isLoggedIn())
+                {
+                    JOptionPane.showMessageDialog(Main.getMainFrame(), "User is currently not logged in with the server.\nPlease try again a little later.",
+                            "User not logged in", JOptionPane.ERROR_MESSAGE);
+                    return null;
+                }
+                if(NetworkManager.isBusy())
+                {
+                    JOptionPane.showMessageDialog(Main.getMainFrame(), "The server is currently busy.\nPlease try again later.",
+                            "Server busy", JOptionPane.ERROR_MESSAGE);
+                    return null;
+                }
+
+                int response = JOptionPane.showConfirmDialog(Main.getMainFrame(), "Are you sure you want to leave the group chat?", "Leave chat", JOptionPane.YES_NO_OPTION);
+                if(response == JOptionPane.YES_OPTION)
+                {
+                    if(!NetworkManager.isConnected())
+                    {
+                        JOptionPane.showMessageDialog(Main.getMainFrame(), "The server is currently unavailable.\nPlease check your connection or try again later.",
+                                "Server unavailable", JOptionPane.ERROR_MESSAGE);
+                        return null;
+                    }
+                    if(!NetworkManager.isLoggedIn())
+                    {
+                        JOptionPane.showMessageDialog(Main.getMainFrame(), "User is currently not logged in with the server.\nPlease try again a little later.",
+                                "User not logged in", JOptionPane.ERROR_MESSAGE);
+                        return null;
+                    }
+                    if(NetworkManager.isBusy())
+                    {
+                        JOptionPane.showMessageDialog(Main.getMainFrame(), "The server is currently busy.\nPlease try again later.",
+                                "Server busy", JOptionPane.ERROR_MESSAGE);
+                        return null;
+                    }
+
+                    NetworkManager.setBusy(true);
+                    Boolean success = NetworkManager.leaveFromGroupChat(activeChatComponentReference.getChatID());
+                    NetworkManager.setBusy(false);
+                    if(success == null)
+                    {
+                        JOptionPane.showMessageDialog(getSelfReference(), "The server is currently unavailable.\nPlease check your connection or try again later.",
+                                "Server unavailable", JOptionPane.ERROR_MESSAGE);
+                        return null;
+                    }
+                    if(!success)
+                    {
+                        JOptionPane.showMessageDialog(getSelfReference(), "The server faced an internal error.\nPlease try again later.",
+                                "Server error", JOptionPane.ERROR_MESSAGE);
+                        return null;
+                    }
+
+                    updateFromDB(ChatMainPanel.KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+                    JOptionPane.showMessageDialog(getSelfReference(), "You have successfully left the chat.", "Successfully left", JOptionPane.INFORMATION_MESSAGE);
+                    return null;
+                }
+                return null;
+            }
+        };
+        leaveGroupChatHandler.execute();
+    }
+
     private void profileButtonActionPerformed(MouseEvent e) {
         // TODO add your handling code here:
         if(SwingUtilities.isLeftMouseButton(e) || SwingUtilities.isRightMouseButton(e))
         {
-            JPopupMenu profileOptionsMenu = new JPopupMenu("Options");
+            if(profileOptionsMenu != null)
+                remove(profileOptionsMenu);
+
+            profileOptionsMenu = new JPopupMenu("Options");
 
             JMenuItem profileOption = new JMenuItem("Profile (coming soon)");
             profileOption.setEnabled(false);
@@ -1151,6 +1449,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
             profileOptionsMenu.add(logoutOption);
 
             add(profileOptionsMenu);
+
             profileOptionsMenu.show(profileButton, e.getX(), e.getY());
         }
 //        if(SwingUtilities.isLeftMouseButton(e))
@@ -1356,6 +1655,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
         }
         updateFromDB();
         messagesToBeSentList.add(new String[]{chatID, String.valueOf(messageID)});
+        chatSendMessageField.grabFocus();
     }
 
     private void deleteChat(ChatListComponentPanel chatToBeDeleted)
@@ -1392,10 +1692,8 @@ public class ChatMainPanel extends javax.swing.JPanel {
         }
     }
 
-    synchronized public void makeChatComponentActive(ChatListComponentPanel componentReference)
-    {
-        if(deleteChatButton.isSelected())
-        {
+    synchronized public void makeChatComponentActive(ChatListComponentPanel componentReference) {
+        if (deleteChatButton.isSelected()) {
             deleteChat(componentReference);
             return;
         }
@@ -1405,12 +1703,10 @@ public class ChatMainPanel extends javax.swing.JPanel {
 
         FlatAnimatedLafChange.showSnapshot();
 
-        if(activeChatComponentReference != null)
-        {
-            if(!chatSendMessageField.getText().isEmpty())
-            {
+        if (activeChatComponentReference != null) {
+            if (!chatSendMessageField.getText().isEmpty()) {
                 int response = JOptionPane.showConfirmDialog(Main.getMainFrame(), "Do you want to discard the written text in the message field and continue?", "Discard message", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-                if(response != JOptionPane.YES_OPTION) {
+                if (response != JOptionPane.YES_OPTION) {
                     FlatAnimatedLafChange.stop();
                     return;
                 }
@@ -1428,8 +1724,8 @@ public class ChatMainPanel extends javax.swing.JPanel {
             chatSendMessageField.setText("");
             chatHeaderNameLabel.setText("placeholderChatName");
             chatHeaderNameLabel.setToolTipText("placeholderChatName");
-            ChatHeaderParticipantOrOnlineLabel.setText("placeholderOnlineStatusOrListOfParticipants");
-            ChatHeaderParticipantOrOnlineLabel.setToolTipText("placeholderOnlineStatusOrListOfParticipantsFull");
+            chatHeaderParticipantOrOnlineLabel.setText("placeholderOnlineStatusOrListOfParticipants");
+            chatHeaderParticipantOrOnlineLabel.setToolTipText("placeholderOnlineStatusOrListOfParticipantsFull");
 
         }
 
@@ -1443,8 +1739,110 @@ public class ChatMainPanel extends javax.swing.JPanel {
         chatHeaderNameLabel.setText(activeChatComponentReference.getChatNameLabel().getText());
         chatHeaderNameLabel.setToolTipText(chatHeaderNameLabel.getText());
         //TODO: Add functionality for checking online status and showing in the below header label
-        ChatHeaderParticipantOrOnlineLabel.setText("");
-        ChatHeaderParticipantOrOnlineLabel.setToolTipText("");
+        chatHeaderParticipantOrOnlineLabel.setText("");
+        chatHeaderParticipantOrOnlineLabel.setToolTipText("");
+        chatHeaderParticipantOrOnlineLabel.setIcon(null);
+
+        String chatType = "";
+        String[][] chatInfo = DatabaseManager.makeQuery("select * from chat where chat_id = " + chatID + ";");
+        if (chatInfo != null && chatInfo.length > 0) {
+            chatType = chatInfo[0][3];
+        }
+        String otherParticipantID;
+        if (chatType.equals("PERSONAL")) {
+            otherParticipantID = chatInfo[0][5];
+
+            Timer onlineStatusUpdateTimer = new Timer();
+            onlineStatusUpdateTimer.schedule(new TimerTask() {
+                @Override
+                public void run() {
+                    //System.out.println("Chat ID " + chatID + " checking");
+                    if (activeChatComponentReference == null || !activeChatComponentReference.getChatID().equals(chatID)) {
+                        cancel();
+                        return;
+                    }
+                    Boolean online = NetworkManager.checkIfUserIsOnline(otherParticipantID);
+                    if (activeChatComponentReference == null || !activeChatComponentReference.getChatID().equals(chatID)) {
+                        cancel();
+                        return;
+                    }
+                    if (online == null) {
+                        chatHeaderParticipantOrOnlineLabel.setText("");
+                        chatHeaderParticipantOrOnlineLabel.setIcon(null);
+                    } else if (!online) {
+                        chatHeaderParticipantOrOnlineLabel.setText("offline");
+                        chatHeaderParticipantOrOnlineLabel.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("red circle.png"))));
+                    } else if (online) {
+                        chatHeaderParticipantOrOnlineLabel.setText("online");
+                        chatHeaderParticipantOrOnlineLabel.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("green circle.png"))));
+                    }
+                }
+            }, 1000, 2000);
+        } else if (chatType.contains("GROUP")) {
+            String[] chatParticipantsID = chatInfo[0][5].split(",");
+            String participantList = "";
+            for (int i = 0; i < chatParticipantsID.length; i++) {
+                if (chatParticipantsID[i].isEmpty())
+                    continue;
+                String[][] participantName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + chatParticipantsID[i] + "';");
+                if (participantName == null || participantName.length == 0) {
+                    DatabaseManager.makeUpdate("insert into unknownUsers values('" + chatParticipantsID[i] + "');");
+                    continue;
+                }
+                participantList = participantList + participantName[0][0] + ", ";
+            }
+            int indexOfExtraCommaSpace = participantList.lastIndexOf(", ");
+            if (indexOfExtraCommaSpace != -1) {
+                participantList = participantList.substring(0, indexOfExtraCommaSpace);
+            }
+            chatHeaderParticipantOrOnlineLabel.setText(participantList);
+            chatHeaderParticipantOrOnlineLabel.setToolTipText(participantList);
+        }
+        if (chatType.equals("PERSONAL")) {
+            chatHeaderIconLabel.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatListComponentPanel.class.getClassLoader().getResource("user.png"))));
+        } else {
+            chatHeaderIconLabel.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatListComponentPanel.class.getClassLoader().getResource("group.png"))));
+        }
+        if (chatType.equals("PERSONAL")) {
+            chatHeaderMoreOptionsButton.setVisible(false);
+        } else {
+            chatHeaderMoreOptionsButton.setVisible(true);
+        }
+
+        if (chatType.contains("GROUP")) {
+            currentChatParticipantsColorsMapping.clear();
+            String[][] allParticipantsWhoHaveSentAtLeastOneMessage = DatabaseManager.makeQuery("select distinct from_account_id from chat" + chatID + ";");
+            String[][] allCurrentParticipants = DatabaseManager.makeQuery("select chat_participants from chat where chat_id = " + chatID + ";");
+            ArrayList<String> allParticipantsPreviousAndNowMerged = new ArrayList<>();
+            if (allParticipantsWhoHaveSentAtLeastOneMessage != null) {
+                for (int i = 0; i < allParticipantsWhoHaveSentAtLeastOneMessage.length; i++) {
+                    if (!allParticipantsWhoHaveSentAtLeastOneMessage[i][0].equals("0000000000000000") && !allParticipantsWhoHaveSentAtLeastOneMessage[i][0].equals(ConfigManager.getAccountID()))
+                        allParticipantsPreviousAndNowMerged.add(allParticipantsWhoHaveSentAtLeastOneMessage[i][0]);
+                }
+            }
+            if (allCurrentParticipants != null && allCurrentParticipants.length == 1) {
+                String[] participants = allCurrentParticipants[0][0].split(",");
+                for (int i = 0; i < participants.length; i++) {
+                    if (!participants[i].equals("0000000000000000") && !participants[i].equals(ConfigManager.getAccountID()))
+                        allParticipantsPreviousAndNowMerged.add(participants[i]);
+                }
+            }
+            Set<String> duplicatePurgeSet = new HashSet<>(allParticipantsPreviousAndNowMerged);
+            allParticipantsPreviousAndNowMerged.clear();
+            allParticipantsPreviousAndNowMerged.addAll(duplicatePurgeSet);
+            for (int i = allParticipantsPreviousAndNowMerged.size() - 1; i >= 0; i--) {
+                if (allParticipantsPreviousAndNowMerged.get(i).isEmpty())
+                    allParticipantsPreviousAndNowMerged.remove(i);
+            }
+            int numberOfOtherParticipants = allParticipantsPreviousAndNowMerged.size();
+            Color[] generatedColors = RandomGenerators.generateRandomDifferentColorsForGroupMemberNamesUsingHSB(numberOfOtherParticipants + 1);
+            for (int i = 0; i < numberOfOtherParticipants; i++) {
+                currentChatParticipantsColorsMapping.put(allParticipantsPreviousAndNowMerged.get(i), generatedColors[i]);
+            }
+            currentChatParticipantsColorsMapping.put("default", generatedColors[generatedColors.length - 1]);
+            //System.out.println(currentChatParticipantsColorsMapping);
+        }
+
 
         JPanel insideChatMessagesContainer = new JPanel(new GridBagLayout());
         JPanel outsideChatMessagesContainer = new JPanel(new BorderLayout(1, 1));
@@ -1456,10 +1854,9 @@ public class ChatMainPanel extends javax.swing.JPanel {
         //layoutConstraints.anchor = GridBagConstraints.FIRST_LINE_START;
         String[][] chatMessages = DatabaseManager.makeQuery("select * from chat" + chatID + " order by message_timestamp desc;");
         //System.out.println(chatMessages.length);
-        if(chatMessages != null)
-        {
+        if (chatMessages != null) {
             numberOfLoadedMessagesInActiveChat = 0;
-            for (int i = (chatMessages.length > Integer.parseInt(ConfigManager.getInitialNumberOfMessagesToLoad())? (Integer.parseInt(ConfigManager.getInitialNumberOfMessagesToLoad()) - 1) : (chatMessages.length - 1)); i >= 0; i--) {
+            for (int i = (chatMessages.length > Integer.parseInt(ConfigManager.getInitialNumberOfMessagesToLoad()) ? (Integer.parseInt(ConfigManager.getInitialNumberOfMessagesToLoad()) - 1) : (chatMessages.length - 1)); i >= 0; i--) {
                 if (chatMessages[i][4].equals("TEXT")) {
                     if (chatMessages[i][1].equals("0000000000000000")) {
                         ChatMessagesListInfoTextComponent newMessage = new ChatMessagesListInfoTextComponent(chatMessages[i][0]);
@@ -1483,9 +1880,38 @@ public class ChatMainPanel extends javax.swing.JPanel {
                         }
                         insideChatMessagesContainer.add(newMessage, layoutConstraints);
                         numberOfLoadedMessagesInActiveChat++;
-                    } else if ((DatabaseManager.makeQuery("select chat_participants from chat where chat_id = " + chatID + ";"))[0][0].contains(chatMessages[i][1])) {
+                    }
+                    //else if ((DatabaseManager.makeQuery("select chat_participants from chat where chat_id = " + chatID + ";"))[0][0].contains(chatMessages[i][1])) {
+                    else {
                         ChatMessagesListReceivedTextComponent newMessage = new ChatMessagesListReceivedTextComponent(chatMessages[i][0]);
-                        newMessage.getMessageContentLabel().setText(chatMessages[i][5]);
+                        if (chatType.equals("PERSONAL")) {
+                            newMessage.getMessageContentLabel().setText(chatMessages[i][5]);
+                        } else {
+                            String senderName;
+                            String[][] userName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + chatMessages[i][1] + "';");
+                            if (userName == null || userName.length == 0) {
+                                senderName = chatMessages[i][1];
+                                DatabaseManager.makeUpdate("insert into unknownUsers values('" + chatMessages[i][1] + "');");
+                            } else {
+                                senderName = userName[0][0];
+                            }
+                            try {
+                                StyledDocument messageLabelDoc = newMessage.getMessageContentLabel().getStyledDocument();
+                                Style senderNameStyle = messageLabelDoc.addStyle("", null);
+                                Color nameColor = currentChatParticipantsColorsMapping.get(chatMessages[i][1]);
+                                if (nameColor == null) {
+                                    nameColor = currentChatParticipantsColorsMapping.get("default");
+                                }
+                                StyleConstants.setForeground(senderNameStyle, nameColor);
+                                StyleConstants.setBold(senderNameStyle, true);
+                                //StyleConstants.setUnderline(senderNameStyle, true);
+                                messageLabelDoc.insertString(messageLabelDoc.getLength(), senderName, senderNameStyle);
+                                messageLabelDoc.insertString(messageLabelDoc.getLength(), "\n" + chatMessages[i][5], null);
+                            } catch (Exception e) {
+                                //System.out.println(e);
+                                newMessage.getMessageContentLabel().setText("<html><b><u>" + senderName + "</u></b><br>" + chatMessages[i][5] + "</html>");
+                            }
+                        }
                         newMessage.getMessageTimestampLabel().setText(chatMessages[i][3]);
                         //newMessage.getMessageTimestampLabel().setToolTipText(chatMessages[i][3]);
                         insideChatMessagesContainer.add(newMessage, layoutConstraints);
@@ -1495,8 +1921,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
                 //TODO: Add display for messages with different type than text
 
 
-                if (!chatMessages[i][1].equals(ConfigManager.getAccountID()) && Integer.parseInt(chatMessages[i][2]) == 2)
-                {
+                if (!chatMessages[i][1].equals(ConfigManager.getAccountID()) && Integer.parseInt(chatMessages[i][2]) == 2) {
                     DatabaseManager.makeUpdate("update chat" + chatID + " set sent_to_server = 3 where message_id = " + chatMessages[i][0] + ";");
                     readReceiptsToBeSent.add(new String[]{chatID, chatMessages[i][0]});
                     DatabaseManager.makeUpdate("insert into unsentReadReceipts values(" + chatID + ", " + chatMessages[i][0] + ");");
@@ -1505,6 +1930,13 @@ public class ChatMainPanel extends javax.swing.JPanel {
         }
         outsideChatMessagesContainer.add(insideChatMessagesContainer, BorderLayout.SOUTH);
 
+        if (chatType.equals("GROUP")) {
+            chatHeaderMoreOptionsButton.setEnabled(true);
+            chatSendMessageField.setEnabled(true);
+        } else if (chatType.equals("GROUP_LF")) {
+            chatHeaderMoreOptionsButton.setEnabled(false);
+            chatSendMessageField.setEnabled(false);
+        }
         chatHeaderPanel.setVisible(true);
         chatSendMessagePanel.setVisible(true);
         chatMessagesListScrollPanel.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
@@ -1515,18 +1947,35 @@ public class ChatMainPanel extends javax.swing.JPanel {
         //System.out.println("Loaded messages: " + numberOfLoadedMessagesInActiveChat);
 
         String[][] updatedUnreadMessagesCount = DatabaseManager.makeQuery("select count(*) from chat" + activeChatComponentReference.getChatID() + " where sent_to_server = 2 and not from_account_id = '" + ConfigManager.getAccountID() + "';");
-        if(updatedUnreadMessagesCount != null && Integer.parseInt(updatedUnreadMessagesCount[0][0]) > 0)
-        {
+        if (updatedUnreadMessagesCount != null && Integer.parseInt(updatedUnreadMessagesCount[0][0]) > 0) {
             activeChatComponentReference.getChatLastMessageLabel().setIcon(new ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("reminder (2).png"))));
             activeChatComponentReference.getChatLastMessageLabel().setText(Integer.parseInt(updatedUnreadMessagesCount[0][0]) + " new message" + (Integer.parseInt(updatedUnreadMessagesCount[0][0]) > 1 ? "s" : ""));
             activeChatComponentReference.getChatLastMessageLabel().setToolTipText(activeChatComponentReference.getChatLastMessageLabel().getText());
         }
 
-        if(updatedUnreadMessagesCount == null || Integer.parseInt(updatedUnreadMessagesCount[0][0]) == 0) {
+        if (updatedUnreadMessagesCount == null || Integer.parseInt(updatedUnreadMessagesCount[0][0]) == 0) {
             String[][] chatLastMessage = DatabaseManager.makeQuery("select message_content, from_account_id, sent_to_server from chat" + activeChatComponentReference.getChatID() + " where message_timestamp = (select max(message_timestamp) from chat" + activeChatComponentReference.getChatID() + ");");
             if (chatLastMessage != null && chatLastMessage.length == 1) {
                 activeChatComponentReference.getChatLastMessageLabel().setIcon(null);
-                activeChatComponentReference.getChatLastMessageLabel().setText(chatLastMessage[0][0]);
+                //activeChatComponentReference.getChatLastMessageLabel().setText(chatLastMessage[0][0]);
+                if (chatType.equals("PERSONAL")) {
+                    activeChatComponentReference.getChatLastMessageLabel().setText(chatLastMessage[0][0]);
+                } else {
+                    String senderID = chatLastMessage[0][1];
+                    if (senderID.equals("0000000000000000")) {
+                        activeChatComponentReference.getChatLastMessageLabel().setText(chatLastMessage[0][0]);
+                    } else if (senderID.equals(ConfigManager.getAccountID())) {
+                        activeChatComponentReference.getChatLastMessageLabel().setText("You: " + chatLastMessage[0][0]);
+                    } else {
+                        String[][] senderName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + senderID + "';");
+                        if (senderName == null || senderName.length == 0) {
+                            activeChatComponentReference.getChatLastMessageLabel().setText(senderID + ": " + chatLastMessage[0][0]);
+                            DatabaseManager.makeUpdate("insert into unknownUsers values('" + senderID + "');");
+                        } else {
+                            activeChatComponentReference.getChatLastMessageLabel().setText(senderName[0][0] + ": " + chatLastMessage[0][0]);
+                        }
+                    }
+                }
                 if (chatLastMessage[0][1].equals(ConfigManager.getAccountID())) {
                     if (Integer.parseInt(chatLastMessage[0][2]) == 3) {
                         activeChatComponentReference.getChatLastMessageLabel().setIcon(new ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("double-check.png"))));
@@ -1542,6 +1991,23 @@ public class ChatMainPanel extends javax.swing.JPanel {
             }
         }
 
+
+
+//        int difference = insideChatMessagesContainer.getSize().height - chatMessagesListScrollPanel.getViewport().getExtentSize().height;
+//        if(difference > 0)
+//        {
+//            chatMessagesListScrollPanel.getViewport().setViewPosition(new Point(0, difference));
+//        }
+//
+//        chatMessagesListScrollPanel.getViewport().addChangeListener(loadOlderMessagesEventListener);
+//
+//        chatSendMessageField.grabFocus();
+//
+//        FlatAnimatedLafChange.stop();
+
+
+
+
         SwingUtilities.invokeLater(new Runnable() {
             @Override
             public void run() {
@@ -1552,6 +2018,8 @@ public class ChatMainPanel extends javax.swing.JPanel {
                 }
 
                 chatMessagesListScrollPanel.getViewport().addChangeListener(loadOlderMessagesEventListener);
+
+                chatSendMessageField.grabFocus();
 
                 FlatAnimatedLafChange.stop();
 
@@ -1575,12 +2043,24 @@ public class ChatMainPanel extends javax.swing.JPanel {
 //        chatMessagesListScrollPanel.getVerticalScrollBar().setValue(chatMessagesListScrollPanel.getVerticalScrollBar().getMaximum());
     }
 
-    //TODO: Implement updating of chat panel from DB, update chat list and message list, if any
+    //TODO: Implement updating of chat panel from DB, update chat list and message list
     synchronized public void updateFromDB(int ... extraParameters)
     {
         chatMessagesListScrollPanel.getViewport().removeChangeListener(loadOlderMessagesEventListener);
 
         FlatAnimatedLafChange.showSnapshot();
+
+        boolean keepChatListScrollPosition = false;
+        int chatListPositionFromBottom = chatListScrollPanel.getVerticalScrollBar().getMaximum() - chatListScrollPanel.getVerticalScrollBar().getValue();
+        if(chatListScrollPanel.getVerticalScrollBar().getValue() > 0)
+        {
+            keepChatListScrollPosition = true;
+        }
+
+//        if(keepChatListScrollPosition)
+//        {
+//            chatListPositionFromBottom = chatListScrollPanel.getVerticalScrollBar().getMaximum() - chatListScrollPanel.getVerticalScrollBar().getValue();
+//        }
 
         String activeChatID = null;
         if(activeChatComponentReference != null)
@@ -1607,10 +2087,45 @@ public class ChatMainPanel extends javax.swing.JPanel {
                     Calendar calendarInstance = Calendar.getInstance();
                     calendarInstance.setTimeInMillis(Long.parseLong(chatInfo[0][0]));
                     DateFormat formatter = new SimpleDateFormat("dd/MM/yy hh:mm a");
+                    if(chatList[i][1].equals("PERSONAL"))
+                    {
+                        chatListComponent.getChatIconLabel().setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatListComponentPanel.class.getClassLoader().getResource("user.png"))));
+                    }
+                    else
+                    {
+                        chatListComponent.getChatIconLabel().setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatListComponentPanel.class.getClassLoader().getResource("group.png"))));
+                    }
                     chatListComponent.getChatLastMessageTimestamp().setText(chatInfo[0][0]);
                     //chatListComponent.getChatLastMessageTimestamp().setToolTipText((formatter.format(calendarInstance.getTime())).toUpperCase());
                     //TODO: add later functionality to verify type of message and show message content accordingly
-                    chatListComponent.getChatLastMessageLabel().setText(chatInfo[0][1]);
+                    if(chatList[i][1].equals("PERSONAL")) {
+                        chatListComponent.getChatLastMessageLabel().setText(chatInfo[0][1]);
+                    }
+                    else
+                    {
+                        String senderID = chatInfo[0][2];
+                        if(senderID.equals("0000000000000000"))
+                        {
+                            chatListComponent.getChatLastMessageLabel().setText(chatInfo[0][1]);
+                        }
+                        else if(senderID.equals(ConfigManager.getAccountID()))
+                        {
+                            chatListComponent.getChatLastMessageLabel().setText("You: " + chatInfo[0][1]);
+                        }
+                        else
+                        {
+                            String[][] senderName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + senderID + "';");
+                            if(senderName == null || senderName.length == 0)
+                            {
+                                chatListComponent.getChatLastMessageLabel().setText(senderID + ": " + chatInfo[0][1]);
+                                DatabaseManager.makeUpdate("insert into unknownUsers values('" + senderID + "');");
+                            }
+                            else
+                            {
+                                chatListComponent.getChatLastMessageLabel().setText(senderName[0][0] + ": " + chatInfo[0][1]);
+                            }
+                        }
+                    }
                     if(chatInfo[0][2].equals(ConfigManager.getAccountID()))
                     {
                         if(Integer.parseInt(chatInfo[0][3]) == 3)
@@ -1683,6 +2198,18 @@ public class ChatMainPanel extends javax.swing.JPanel {
             chatListScrollPanel.getViewport().setView(noChatMessageLabel);
         }
 
+        if(keepChatListScrollPosition)
+        {
+            chatListScrollPanel.getVerticalScrollBar().setValue(chatListScrollPanel.getVerticalScrollBar().getMaximum() - chatListPositionFromBottom);
+
+//            SwingUtilities.invokeLater(new Runnable() {
+//                @Override
+//                public void run() {
+//                    chatListScrollPanel.getVerticalScrollBar().setValue(chatListScrollPanel.getVerticalScrollBar().getMaximum() - chatListPositionFromBottom);
+//                }
+//            });
+        }
+
         FlatAnimatedLafChange.stop();
 
         if(activeChatID != null)
@@ -1696,9 +2223,25 @@ public class ChatMainPanel extends javax.swing.JPanel {
                 }
             }
 
-            if(extraParameters.length > 0 && extraParameters[0] == KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_LOADING_OLD_MESSAGES)
+            if(extraParameters.length > 0 && Arrays.toString(extraParameters).contains(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_LOADING_OLD_MESSAGES + ""))
             {
-                currentScrollBarPosition = chatMessagesListScrollPanel.getVerticalScrollBar().getMaximum() - chatMessagesListScrollPanel.getVerticalScrollBar().getValue();
+                messageListCurrentScrollBarPositionFromBottom = chatMessagesListScrollPanel.getVerticalScrollBar().getMaximum() - chatMessagesListScrollPanel.getVerticalScrollBar().getValue();
+            }
+            else if(extraParameters.length > 0 && Arrays.toString(extraParameters).contains(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON + ""))
+            {
+                messageListCurrentScrollBarPositionFromTop = chatMessagesListScrollPanel.getVerticalScrollBar().getValue();
+                if(chatMessagesListScrollPanel.getVerticalScrollBar().getMaximum() - (chatMessagesListScrollPanel.getVerticalScrollBar().getValue() + chatMessagesListScrollPanel.getVerticalScrollBar().getModel().getExtent()) < 50)
+                    forceScrollDownMessageList = true;
+                else
+                    forceScrollDownMessageList = false;
+            }
+
+            boolean previousMessagesAlreadyLoadedInChat = false;
+            long totalNumberOfMessagesToLoad = Integer.parseInt(ConfigManager.getInitialNumberOfMessagesToLoad());
+            if(numberOfLoadedMessagesInActiveChat > Integer.parseInt(ConfigManager.getInitialNumberOfMessagesToLoad()))
+            {
+                previousMessagesAlreadyLoadedInChat = true;
+                totalNumberOfMessagesToLoad = numberOfLoadedMessagesInActiveChat;
             }
 
             numberOfLoadedMessagesInActiveChat = 0;
@@ -1711,6 +2254,22 @@ public class ChatMainPanel extends javax.swing.JPanel {
             chatHeaderNameLabel.setToolTipText(chatHeaderNameLabel.getText());
 
             chatMessagesListScrollPanel.getViewport().setView(null);
+
+            String chatType = "";
+            String[][] chatInfo = DatabaseManager.makeQuery("select * from chat where chat_id = " + activeChatComponentReference.getChatID() + ";");
+            if(chatInfo != null && chatInfo.length > 0)
+            {
+                chatType = chatInfo[0][3];
+            }
+
+            if(chatType.equals("PERSONAL"))
+            {
+                chatHeaderIconLabel.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatListComponentPanel.class.getClassLoader().getResource("user.png"))));
+            }
+            else
+            {
+                chatHeaderIconLabel.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatListComponentPanel.class.getClassLoader().getResource("group.png"))));
+            }
 
             JPanel insideChatMessagesContainer = new JPanel(new GridBagLayout());
             JPanel outsideChatMessagesContainer = new JPanel(new BorderLayout(1, 1));
@@ -1725,7 +2284,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
             if(chatMessages != null)
             {
                 numberOfLoadedMessagesInActiveChat = 0;
-                for (int i = (chatMessages.length > Integer.parseInt(ConfigManager.getInitialNumberOfMessagesToLoad())? (Integer.parseInt(ConfigManager.getInitialNumberOfMessagesToLoad()) - 1) : (chatMessages.length - 1)); i >= 0; i--) {
+                for (int i = (int)(chatMessages.length > Integer.parseInt(ConfigManager.getInitialNumberOfMessagesToLoad())? (previousMessagesAlreadyLoadedInChat? (totalNumberOfMessagesToLoad - 1) : (Integer.parseInt(ConfigManager.getInitialNumberOfMessagesToLoad()) - 1)) : (chatMessages.length - 1)); i >= 0; i--) {
                     if (chatMessages[i][4].equals("TEXT"))
                     {
                         if(chatMessages[i][1].equals("0000000000000000"))
@@ -1761,10 +2320,43 @@ public class ChatMainPanel extends javax.swing.JPanel {
                             insideChatMessagesContainer.add(newMessage, layoutConstraints);
                             numberOfLoadedMessagesInActiveChat++;
                         }
-                        else if((DatabaseManager.makeQuery("select chat_participants from chat where chat_id = " + activeChatComponentReference.getChatID() + ";"))[0][0].contains(chatMessages[i][1]))
-                        {
+                        //else if((DatabaseManager.makeQuery("select chat_participants from chat where chat_id = " + activeChatComponentReference.getChatID() + ";"))[0][0].contains(chatMessages[i][1]))
+                        else {
                             ChatMessagesListReceivedTextComponent newMessage = new ChatMessagesListReceivedTextComponent(chatMessages[i][0]);
-                            newMessage.getMessageContentLabel().setText(chatMessages[i][5]);
+                            if(chatType.equals("PERSONAL")) {
+                                newMessage.getMessageContentLabel().setText(chatMessages[i][5]);
+                            }
+                            else {
+                                String senderName;
+                                String[][] userName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + chatMessages[i][1] + "';");
+                                if(userName == null || userName.length == 0)
+                                {
+                                    senderName = chatMessages[i][1];
+                                    DatabaseManager.makeUpdate("insert into unknownUsers values('" + chatMessages[i][1] + "');");
+                                }
+                                else
+                                {
+                                    senderName = userName[0][0];
+                                }
+                                try {
+                                    StyledDocument messageLabelDoc = newMessage.getMessageContentLabel().getStyledDocument();
+                                    Style senderNameStyle = messageLabelDoc.addStyle("", null);
+                                    Color nameColor = currentChatParticipantsColorsMapping.get(chatMessages[i][1]);
+                                    if(nameColor == null)
+                                    {
+                                        nameColor = currentChatParticipantsColorsMapping.get("default");
+                                    }
+                                    StyleConstants.setForeground(senderNameStyle, nameColor);
+                                    StyleConstants.setBold(senderNameStyle, true);
+                                    //StyleConstants.setUnderline(senderNameStyle, true);
+                                    messageLabelDoc.insertString(messageLabelDoc.getLength(), senderName, senderNameStyle);
+                                    messageLabelDoc.insertString(messageLabelDoc.getLength(), "\n" + chatMessages[i][5], null);
+                                }
+                                catch (Exception e) {
+                                    //System.out.println(e);
+                                    newMessage.getMessageContentLabel().setText("<html><b><u>" + senderName + "</u></b><br>" + chatMessages[i][5] + "</html>");
+                                }
+                            }
                             newMessage.getMessageTimestampLabel().setText(chatMessages[i][3]);
                             //newMessage.getMessageTimestampLabel().setToolTipText(chatMessages[i][3]);
                             insideChatMessagesContainer.add(newMessage, layoutConstraints);
@@ -1784,6 +2376,42 @@ public class ChatMainPanel extends javax.swing.JPanel {
             }
             outsideChatMessagesContainer.add(insideChatMessagesContainer, BorderLayout.SOUTH);
 
+            if(chatType.equals("GROUP"))
+            {
+                chatHeaderMoreOptionsButton.setEnabled(true);
+                chatSendMessageField.setEnabled(true);
+            }
+            else if(chatType.equals("GROUP_LF"))
+            {
+                chatHeaderMoreOptionsButton.setEnabled(false);
+                chatSendMessageField.setEnabled(false);
+            }
+
+            if(chatType.contains("GROUP"))
+            {
+                String[] chatParticipantsID = chatInfo[0][5].split(",");
+                String participantList = "";
+                for(int i = 0; i < chatParticipantsID.length; i++)
+                {
+                    if(chatParticipantsID[i].isEmpty())
+                        continue;
+                    String[][] participantName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + chatParticipantsID[i] + "';");
+                    if(participantName == null || participantName.length == 0)
+                    {
+                        DatabaseManager.makeUpdate("insert into unknownUsers values('" + chatParticipantsID[i] + "');");
+                        continue;
+                    }
+                    participantList = participantList + participantName[0][0] + ", ";
+                }
+                int indexOfExtraCommaSpace = participantList.lastIndexOf(", ");
+                if(indexOfExtraCommaSpace != -1)
+                {
+                    participantList = participantList.substring(0, indexOfExtraCommaSpace);
+                }
+                chatHeaderParticipantOrOnlineLabel.setText(participantList);
+                chatHeaderParticipantOrOnlineLabel.setToolTipText(participantList);
+            }
+
             chatMessagesListScrollPanel.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
             chatMessagesListScrollPanel.getVerticalScrollBar().setUnitIncrement(10);
             chatMessagesListScrollPanel.getViewport().setView(outsideChatMessagesContainer);
@@ -1802,7 +2430,35 @@ public class ChatMainPanel extends javax.swing.JPanel {
                 String[][] chatLastMessage = DatabaseManager.makeQuery("select message_content, from_account_id, sent_to_server from chat" + activeChatComponentReference.getChatID() + " where message_timestamp = (select max(message_timestamp) from chat" + activeChatComponentReference.getChatID() + ");");
                 if (chatLastMessage != null && chatLastMessage.length == 1) {
                     activeChatComponentReference.getChatLastMessageLabel().setIcon(null);
-                    activeChatComponentReference.getChatLastMessageLabel().setText(chatLastMessage[0][0]);
+                    //activeChatComponentReference.getChatLastMessageLabel().setText(chatLastMessage[0][0]);
+                    if(chatType.equals("PERSONAL")) {
+                        activeChatComponentReference.getChatLastMessageLabel().setText(chatLastMessage[0][0]);
+                    }
+                    else
+                    {
+                        String senderID = chatLastMessage[0][1];
+                        if(senderID.equals("0000000000000000"))
+                        {
+                            activeChatComponentReference.getChatLastMessageLabel().setText(chatLastMessage[0][0]);
+                        }
+                        else if(senderID.equals(ConfigManager.getAccountID()))
+                        {
+                            activeChatComponentReference.getChatLastMessageLabel().setText("You: " + chatLastMessage[0][0]);
+                        }
+                        else
+                        {
+                            String[][] senderName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + senderID + "';");
+                            if(senderName == null || senderName.length == 0)
+                            {
+                                activeChatComponentReference.getChatLastMessageLabel().setText(senderID + ": " + chatLastMessage[0][0]);
+                                DatabaseManager.makeUpdate("insert into unknownUsers values('" + senderID + "');");
+                            }
+                            else
+                            {
+                                activeChatComponentReference.getChatLastMessageLabel().setText(senderName[0][0] + ": " + chatLastMessage[0][0]);
+                            }
+                        }
+                    }
                     if (chatLastMessage[0][1].equals(ConfigManager.getAccountID())) {
                         if (Integer.parseInt(chatLastMessage[0][2]) == 3) {
                             activeChatComponentReference.getChatLastMessageLabel().setIcon(new ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("double-check.png"))));
@@ -1827,9 +2483,14 @@ public class ChatMainPanel extends javax.swing.JPanel {
                         chatMessagesListScrollPanel.getViewport().setViewPosition(new Point(0, difference));
                     }
 
-                    if(extraParameters.length > 0 && extraParameters[0] == KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_LOADING_OLD_MESSAGES)
+                    if(extraParameters.length > 0 && Arrays.toString(extraParameters).contains(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_LOADING_OLD_MESSAGES + ""))
                     {
-                        chatMessagesListScrollPanel.getVerticalScrollBar().setValue(chatMessagesListScrollPanel.getVerticalScrollBar().getMaximum() - currentScrollBarPosition);
+                        chatMessagesListScrollPanel.getVerticalScrollBar().setValue(chatMessagesListScrollPanel.getVerticalScrollBar().getMaximum() - messageListCurrentScrollBarPositionFromBottom);
+                    }
+                    else if(extraParameters.length > 0 && Arrays.toString(extraParameters).contains(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON + ""))
+                    {
+                        if(!forceScrollDownMessageList)
+                            chatMessagesListScrollPanel.getVerticalScrollBar().setValue(messageListCurrentScrollBarPositionFromTop);
                     }
 
                     chatMessagesListScrollPanel.getViewport().addChangeListener(loadOlderMessagesEventListener);
@@ -1842,11 +2503,14 @@ public class ChatMainPanel extends javax.swing.JPanel {
 
 
     // Variables declaration - do not modify
-    private javax.swing.JLabel ChatHeaderParticipantOrOnlineLabel;
+    private JPopupMenu profileOptionsMenu;
+    private JPopupMenu chatHeaderMoreOptionsMenu;
+    private javax.swing.JLabel chatHeaderParticipantOrOnlineLabel;
     private javax.swing.JLabel appStatusColorLabel;
     private javax.swing.JPanel appStatusPanel;
     private javax.swing.JLabel appStatusTextLabel;
     private javax.swing.JLabel chatHeaderIconLabel;
+    private javax.swing.JButton chatHeaderMoreOptionsButton;
     private javax.swing.JLabel chatHeaderNameLabel;
     private javax.swing.JPanel chatHeaderPanel;
     private javax.swing.JPanel chatListControlsPanel;

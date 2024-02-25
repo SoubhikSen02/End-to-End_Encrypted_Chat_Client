@@ -5,12 +5,17 @@
 package com.chat.e2e;
 
 import javax.swing.*;
+import javax.swing.event.CaretEvent;
+import javax.swing.event.CaretListener;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import java.awt.*;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Objects;
 
 /**
@@ -30,8 +35,6 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
         this.parentPanel = parentPanel;
         setTitle("Create chat");
         setLocationRelativeTo(parent);
-
-        groupChatButton.setEnabled(false);
 
         setVisible(true);
     }
@@ -55,6 +58,7 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
         savedUsersButton = new javax.swing.JButton();
         cancelButton = new javax.swing.JButton();
         createChatButton = new javax.swing.JButton();
+        numberOfCharactersLeftLabel = new javax.swing.JLabel();
 
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
@@ -80,7 +84,7 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
             }
         });
 
-        groupChatButton.setText("Group Chat (coming soon)");
+        groupChatButton.setText("Group Chat");
         groupChatButton.setToolTipText("Chat between more than 2 users");
         groupChatButton.setFocusPainted(false);
         groupChatButton.addActionListener(new java.awt.event.ActionListener() {
@@ -112,6 +116,23 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
                 accountIdFieldActionPerformed();
             }
         });
+        accountIdField.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusGained(FocusEvent e) {
+                accountIdFieldActionPerformed();
+            }
+
+            @Override
+            public void focusLost(FocusEvent e) {
+                accountIdFieldActionPerformed();
+            }
+        });
+        accountIdField.addCaretListener(new CaretListener() {
+            @Override
+            public void caretUpdate(CaretEvent e) {
+                accountIdFieldActionPerformed();
+            }
+        });
 
         savedUsersButton.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(NewChatCreateDialog.class.getClassLoader().getResource("contact-book (1).png")))); // NOI18N
         savedUsersButton.setToolTipText("Choose from saved users");
@@ -137,23 +158,27 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
             }
         });
 
+        numberOfCharactersLeftLabel.setText("0/16 characters");
+        numberOfCharactersLeftLabel.setForeground(Color.red);
+
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
         getContentPane().setLayout(layout);
         layout.setHorizontalGroup(
                 layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                        .addGroup(layout.createSequentialGroup()
+                        .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
                                 .addGap(34, 34, 34)
-                                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                                        .addComponent(createChatLabel, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                                        .addComponent(selectTypeLabel, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                                        .addComponent(accountIdLabel, javax.swing.GroupLayout.DEFAULT_SIZE, 389, Short.MAX_VALUE)
-                                        .addComponent(personalChatButton, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                                        .addComponent(groupChatButton, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                                        .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
+                                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
+                                        .addComponent(numberOfCharactersLeftLabel, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                                        .addComponent(createChatLabel, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                                        .addComponent(selectTypeLabel, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                                        .addComponent(accountIdLabel, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, 389, Short.MAX_VALUE)
+                                        .addComponent(personalChatButton, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                                        .addComponent(groupChatButton, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                                        .addGroup(layout.createSequentialGroup()
                                                 .addComponent(accountIdField)
                                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                                                 .addComponent(savedUsersButton, javax.swing.GroupLayout.PREFERRED_SIZE, 30, javax.swing.GroupLayout.PREFERRED_SIZE))
-                                        .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
+                                        .addGroup(layout.createSequentialGroup()
                                                 .addComponent(cancelButton, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                                                 .addGap(18, 18, 18)
                                                 .addComponent(createChatButton, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)))
@@ -161,7 +186,7 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
         );
         layout.setVerticalGroup(
                 layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                        .addGroup(layout.createSequentialGroup()
+                        .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
                                 .addGap(30, 30, 30)
                                 .addComponent(createChatLabel)
                                 .addGap(18, 18, 18)
@@ -176,11 +201,13 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
                                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                                         .addComponent(accountIdField, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                                         .addComponent(savedUsersButton))
-                                .addGap(30, 30, 30)
+                                .addGap(2, 2, 2)
+                                .addComponent(numberOfCharactersLeftLabel)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                                         .addComponent(cancelButton)
                                         .addComponent(createChatButton))
-                                .addContainerGap(40, Short.MAX_VALUE))
+                                .addGap(40, 40, 40))
         );
 
         pack();
@@ -192,6 +219,7 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
         {
             accountIdLabel.setText("Enter the account ID of other participant:");
             accountIdField.setToolTipText("Enter 16-digit account ID");
+            accountIdFieldActionPerformed();
         }
     }
 
@@ -201,12 +229,65 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
         {
             accountIdLabel.setText("Enter the comma-separated list of account IDs of other participants:");
             accountIdField.setToolTipText("Enter 16-digit account IDs separated by commas");
+            accountIdFieldActionPerformed();
         }
     }
 
     private void accountIdFieldActionPerformed() {
         // TODO add your handling code here:
         accountIdField.setBackground((new JTextField()).getBackground());
+        if(personalChatButton.isSelected())
+        {
+            numberOfCharactersLeftLabel.setText(accountIdField.getText().length() + "/16 characters");
+            if(accountIdField.getText().length() == 16)
+            {
+                numberOfCharactersLeftLabel.setForeground(Color.green);
+            }
+            else
+            {
+                numberOfCharactersLeftLabel.setForeground(Color.red);
+            }
+        }
+        else
+        {
+            if(accountIdField.hasFocus())
+            {
+                int caretPosition = accountIdField.getCaretPosition();
+                String givenText = accountIdField.getText();
+                int charactersBeforeCaret = 0;
+                int charactersAfterCaret = 0;
+                for(int i = caretPosition; i < givenText.length(); i++)
+                {
+                    if(i < 0)
+                        continue;
+                    if(givenText.charAt(i) == ',')
+                        break;
+                    charactersAfterCaret++;
+                }
+                for(int i = caretPosition - 1; i >= 0; i--)
+                {
+                    if(i >= givenText.length())
+                        continue;
+                    if(givenText.charAt(i) == ',')
+                        break;
+                    charactersBeforeCaret++;
+                }
+                int numberOfCharactersInCurrentId = charactersBeforeCaret + charactersAfterCaret;
+                numberOfCharactersLeftLabel.setText(numberOfCharactersInCurrentId + "/16 characters");
+                if(numberOfCharactersInCurrentId == 16)
+                {
+                    numberOfCharactersLeftLabel.setForeground(Color.green);
+                }
+                else
+                {
+                    numberOfCharactersLeftLabel.setForeground(Color.red);
+                }
+            }
+            else
+            {
+                numberOfCharactersLeftLabel.setText(" ");
+            }
+        }
     }
 
     private void savedUsersButtonActionPerformed(java.awt.event.ActionEvent evt) {
@@ -442,7 +523,7 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
                         return null;
                     }
 
-                    parentPanel.updateFromDB();
+                    parentPanel.updateFromDB(ChatMainPanel.KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
                     JOptionPane.showMessageDialog(getSelfReference(), "The chat has been successfully created.", "Chat created", JOptionPane.INFORMATION_MESSAGE);
                     getSelfReference().dispose();
                     return null;
@@ -451,9 +532,57 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
                 {
                     //TODO: Add code for creating new group chat by calling network manager routine
                     NetworkManager.setBusy(false);
-                    JOptionPane.showMessageDialog(getSelfReference(), "group chat create test message", "gc test", JOptionPane.INFORMATION_MESSAGE);
-                    stopCreateChatButtonLoadingAnimation();
+                    String chatName = JOptionPane.showInputDialog(getSelfReference(), "Enter name of the group chat:", "Chat name", JOptionPane.QUESTION_MESSAGE);
+                    if(chatName == null)
+                    {
+                        stopCreateChatButtonLoadingAnimation();
+                        return null;
+                    }
+                    if(chatName.isEmpty())
+                    {
+                        JOptionPane.showMessageDialog(getSelfReference(), "Group chat name cannot be empty.", "Invalid name", JOptionPane.ERROR_MESSAGE);
+                        stopCreateChatButtonLoadingAnimation();
+                        return null;
+                    }
+
+                    String participantList = accountIdField.getText();
+                    if(participantList.contains(",,"))
+                    {
+                        participantList = participantList.replaceAll(",,", ",");
+                    }
+                    if(participantList.charAt(participantList.length() - 1) == ',')
+                    {
+                        participantList = participantList.substring(0, participantList.length() - 1);
+                    }
+                    if(participantList.charAt(0) == ',')
+                    {
+                        participantList = participantList.substring(1);
+                    }
+                    NetworkManager.setBusy(true);
+                    Boolean success = NetworkManager.createNewGroupChat("GROUP", chatName, participantList);
+                    NetworkManager.setBusy(false);
+                    if(success == null)
+                    {
+                        JOptionPane.showMessageDialog(getSelfReference(), "The server is currently unavailable.\nPlease check your connection or try again later.",
+                                "Server unavailable", JOptionPane.ERROR_MESSAGE);
+                        stopCreateChatButtonLoadingAnimation();
+                        return null;
+                    }
+                    if(!success)
+                    {
+                        JOptionPane.showMessageDialog(getSelfReference(), "The server faced an internal error.\nPlease try again later.",
+                                "Server error", JOptionPane.ERROR_MESSAGE);
+                        stopCreateChatButtonLoadingAnimation();
+                        return null;
+                    }
+
+                    parentPanel.updateFromDB(ChatMainPanel.KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+                    JOptionPane.showMessageDialog(getSelfReference(), "The chat has been successfully created.", "Chat created", JOptionPane.INFORMATION_MESSAGE);
+                    getSelfReference().dispose();
                     return null;
+//                    JOptionPane.showMessageDialog(getSelfReference(), "group chat create test message", "gc test", JOptionPane.INFORMATION_MESSAGE);
+//                    stopCreateChatButtonLoadingAnimation();
+//                    return null;
                 }
 
 
@@ -471,7 +600,7 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
     private void startCreateChatButtonLoadingAnimation()
     {
         personalChatButton.setEnabled(false);
-        //groupChatButton.setEnabled(false);
+        groupChatButton.setEnabled(false);
         accountIdField.setEnabled(false);
         savedUsersButton.setEnabled(false);
         cancelButton.setEnabled(false);
@@ -486,7 +615,7 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
         createChatButton.setIcon(null);
         createChatButton.setEnabled(true);
         personalChatButton.setEnabled(true);
-        //groupChatButton.setEnabled(true);
+        groupChatButton.setEnabled(true);
         accountIdField.setEnabled(true);
         savedUsersButton.setEnabled(true);
         cancelButton.setEnabled(true);
@@ -553,6 +682,7 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
     private javax.swing.JButton createChatButton;
     private javax.swing.JLabel createChatLabel;
     private javax.swing.JRadioButton groupChatButton;
+    private javax.swing.JLabel numberOfCharactersLeftLabel;
     private javax.swing.JRadioButton personalChatButton;
     private javax.swing.JButton savedUsersButton;
     private javax.swing.JLabel selectTypeLabel;

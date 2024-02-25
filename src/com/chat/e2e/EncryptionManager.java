@@ -61,7 +61,7 @@ public class EncryptionManager
     // The difference value is passed as a seed to a random object
     // The random object is used to generate as many characters as required for the IV
     // Since the random object of both sender and receiver will receive the same seed, it will generate the same sequence of characters
-    synchronized public static String generateDeterministicKey(String accountId1, String accountId2)
+    synchronized public static String generateDeterministicKeyForPersonalChats(String accountId1, String accountId2)
     {
         byte[] keyBytes = new byte[KEY_LENGTH / 8];
         long randomObjectSeed = Long.parseLong(accountId1) + Long.parseLong(accountId2);
@@ -73,10 +73,44 @@ public class EncryptionManager
         return Base64.getEncoder().encodeToString(keyBytes);
     }
 
-    synchronized public static String generateDeterministicInitializationVector(String accountId1, String accountId2)
+    synchronized public static String generateDeterministicInitializationVectorForPersonalChats(String accountId1, String accountId2)
     {
         byte[] ivBytes = new byte[IV_LENGTH];
         long randomObjectSeed = Math.abs(Long.parseLong(accountId1) - Long.parseLong(accountId2));
+        Random randomCharacterGenerator = new Random(randomObjectSeed);
+        for(int i = 0; i < ivBytes.length; i++)
+        {
+            ivBytes[i] = (byte)randomCharacterGenerator.nextInt(33, 127);
+        }
+        return Base64.getEncoder().encodeToString(ivBytes);
+    }
+
+    synchronized public static String generateDeterministicKeyForGroupChats(String chatName, String chatID)
+    {
+        byte[] keyBytes = new byte[KEY_LENGTH / 8];
+        long randomObjectSeed = 0;
+        for(int i = 0; i < chatName.length(); i++)
+        {
+            randomObjectSeed = randomObjectSeed + (long)chatName.charAt(i);
+        }
+        randomObjectSeed = randomObjectSeed + Long.parseLong(chatID);
+        Random randomCharacterGenerator = new Random(randomObjectSeed);
+        for(int i = 0; i < keyBytes.length; i++)
+        {
+            keyBytes[i] = (byte)randomCharacterGenerator.nextInt(33, 127);
+        }
+        return Base64.getEncoder().encodeToString(keyBytes);
+    }
+
+    synchronized public static String generateDeterministicInitializationVectorForGroupChats(String chatName, String chatID)
+    {
+        byte[] ivBytes = new byte[IV_LENGTH];
+        long randomObjectSeed = 0;
+        for(int i = 0; i < chatName.length(); i++)
+        {
+            randomObjectSeed = randomObjectSeed + (long)chatName.charAt(i);
+        }
+        randomObjectSeed = randomObjectSeed - Long.parseLong(chatID);
         Random randomCharacterGenerator = new Random(randomObjectSeed);
         for(int i = 0; i < ivBytes.length; i++)
         {
