@@ -156,7 +156,7 @@ public class AdvancedSettingsPanel extends javax.swing.JPanel {
         probeTimeLabel.setToolTipText("How often to check if connection to server is still alive");
 
         probeTimeSpinnerField.setModel(new javax.swing.SpinnerNumberModel(Integer.parseInt(ConfigManager.getConnectionProbeTimePeriod()), 5, 60, 1));
-        probeTimeSpinnerField.setToolTipText("Probe in between time in seconds\nMinimum - 5\nMaximum - 60\nRecommended - 20");
+        probeTimeSpinnerField.setToolTipText("Probe in between time in seconds\nMinimum - 5\nMaximum - 60\nRecommended - 10");
         probeTimeSpinnerField.addChangeListener(new javax.swing.event.ChangeListener() {
             public void stateChanged(javax.swing.event.ChangeEvent evt) {
                 probeTimeSpinnerFieldStateChanged(evt);

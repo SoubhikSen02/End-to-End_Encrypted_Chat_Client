@@ -61,7 +61,7 @@ public class ChangeDisplayNameDialog extends javax.swing.JDialog {
                     }
                     else
                     {
-                        int response = JOptionPane.showConfirmDialog(getSelfReference(), "Do you want to cancel changing display name?", "Cancel changes", JOptionPane.YES_NO_OPTION);
+                        int response = JOptionPane.showConfirmDialog(getSelfReference(), "Do you want to cancel changing display name?", "Cancel changes", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
                         if(response == JOptionPane.NO_OPTION)
                         {
                             return;
@@ -196,7 +196,7 @@ public class ChangeDisplayNameDialog extends javax.swing.JDialog {
         }
         else
         {
-            int response = JOptionPane.showConfirmDialog(getSelfReference(), "Do you want to cancel changing display name?", "Cancel changes", JOptionPane.YES_NO_OPTION);
+            int response = JOptionPane.showConfirmDialog(getSelfReference(), "Do you want to cancel changing display name?", "Cancel changes", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
             if(response == JOptionPane.NO_OPTION)
             {
                 return;

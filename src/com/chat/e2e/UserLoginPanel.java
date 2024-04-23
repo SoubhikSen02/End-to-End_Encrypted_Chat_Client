@@ -102,6 +102,7 @@ public class UserLoginPanel extends javax.swing.JPanel {
                 showPasswordButtonActionPerformed(evt);
             }
         });
+        showPasswordButton.setFocusable(false);
 
         stayLoggedInCheckbox.setFont(new java.awt.Font("Segoe UI", 1, 12)); // NOI18N
         stayLoggedInCheckbox.setText("Stay logged in");
@@ -447,6 +448,11 @@ public class UserLoginPanel extends javax.swing.JPanel {
             }
         };
         dialogChanger.execute();
+    }
+
+    public void makeUsernameFieldGrabFocus()
+    {
+        usernameField.grabFocus();
     }
 
 

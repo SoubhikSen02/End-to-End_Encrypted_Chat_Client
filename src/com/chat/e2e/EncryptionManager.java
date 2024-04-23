@@ -23,12 +23,20 @@ public class EncryptionManager
 //    keyGen.init(256); // for example
 //    SecretKey secretKey = keyGen.generateKey();
 
-    synchronized public static String generateSecretKey()
+    synchronized public static String findDatabaseKey(String accountID, String username)
     {
+        //System.out.println("Generating key with:\nID: " + accountID + "\nUsername: " + username);
+        byte[] seed = new byte[KEY_LENGTH / 8];
+        for(int i = 0; i < seed.length; i++)
+        {
+            seed[i] = (byte) ((byte)accountID.charAt(i % accountID.length()) + (byte)username.charAt(i % username.length()));
+        }
         String generatedKey;
         try {
             KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
-            keyGenerator.init(KEY_LENGTH);
+            SecureRandom secureRandomObject = SecureRandom.getInstance("SHA1PRNG");
+            secureRandomObject.setSeed(seed);
+            keyGenerator.init(KEY_LENGTH, secureRandomObject);
             SecretKey key = keyGenerator.generateKey();
             generatedKey = Base64.getEncoder().encodeToString(key.getEncoded());
         }
@@ -36,15 +44,32 @@ public class EncryptionManager
         {
             return null;
         }
+        //System.out.println("Returning key: " + generatedKey);
         return generatedKey;
     }
 
-    synchronized public static String generateInitializationVector()
+    synchronized public static String findDatabaseIV(String accountID, String username)
     {
+        //System.out.println("Generating IV with:\nID: " + accountID + "\nUsername: " + username);
+        byte[] seed = new byte[IV_LENGTH];
+        for(int i = 0; i < seed.length; i++)
+        {
+            seed[i] = (byte) ((byte)accountID.charAt(i % accountID.length()) + (byte)username.charAt(i % username.length()));
+        }
         byte[] IV = new byte[IV_LENGTH];
-        SecureRandom randomizer = new SecureRandom();
-        randomizer.nextBytes(IV);
-        return Base64.getEncoder().encodeToString(IV);
+        try
+        {
+            SecureRandom secureRandomObject = SecureRandom.getInstance("SHA1PRNG");
+            secureRandomObject.setSeed(seed);
+            secureRandomObject.nextBytes(IV);
+        }
+        catch (Exception e)
+        {
+            return null;
+        }
+        String generatedIV = Base64.getEncoder().encodeToString(IV);
+        //System.out.println("Returning IV: " + generatedIV);
+        return generatedIV;
     }
 
     //TODO: The first account ID must be of the chat creator who first created the chat and sent it to server

@@ -11,11 +11,11 @@ import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import javax.swing.text.Style;
-import javax.swing.text.StyleConstants;
-import javax.swing.text.StyledDocument;
 import java.awt.*;
 import java.awt.event.*;
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
+import java.io.File;
 import java.math.BigInteger;
 import java.sql.Date;
 import java.text.DateFormat;
@@ -23,6 +23,7 @@ import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.Timer;
+
 
 
 /**
@@ -36,45 +37,53 @@ public class ChatMainPanel extends javax.swing.JPanel {
     //final public static int KEEP_CHAT_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING = 3;
     //final public static int
 
+//    private boolean guiUpdateInProgress = false;
+//    private ArrayList<Object[]> updateQueue = new ArrayList<>();
+//
 
-    private SwingWorker<Void, Void> networkStatusUpdater;
-    public SwingWorker<Void, Void> getNetworkStatusUpdaterThread()
+    private Timer networkStatusUpdater;
+    private TimerTask networkStatusUpdateTask;
+    public Timer getNetworkStatusUpdater()
     {
         return networkStatusUpdater;
     }
 
 
 
-    private SwingWorker<Void, Void> reloginThread;
-    public SwingWorker<Void, Void> getReloginThread()
+    private Timer reloginTimer;
+    private TimerTask reloginTask;
+    public Timer getReloginTimer()
     {
-        return reloginThread;
+        return reloginTimer;
     }
 
 
 
-    private SwingWorker<Void, Void> newChatAndMessageReceiverThread;
-    public SwingWorker<Void,Void> getNewChatAndMessageReceiverThread()
+    private Timer newChatAndMessageReceiver;
+    private TimerTask newChatAndMessageReceivingTask;
+    public Timer getNewChatAndMessageReceiver()
     {
-        return newChatAndMessageReceiverThread;
+        return newChatAndMessageReceiver;
     }
 
 
 
 
-    private SwingWorker<Void, Void> messageReadReceiptsUpdatorThread;
-    public SwingWorker<Void, Void> getMessageReadReceiptsUpdatorThread()
+    private Timer messageReadReceiptsUpdator;
+    private TimerTask readReceiptUpdatingTask;
+    public Timer getMessageReadReceiptsUpdator()
     {
-        return messageReadReceiptsUpdatorThread;
+        return messageReadReceiptsUpdator;
     }
     private ArrayList<String[]> readReceiptsToBeSent = new ArrayList<>();
 
 
 
-    private SwingWorker<Void, Void> newMessageSenderThread;
-    public SwingWorker<Void, Void> getNewMessageSenderThread()
+    private Timer newMessageSender;
+    private TimerTask newMessageSendingTask;
+    public Timer getNewMessageSender()
     {
-        return newMessageSenderThread;
+        return newMessageSender;
     }
     private ArrayList<String[]> messagesToBeSentList = new ArrayList<>();
 
@@ -89,12 +98,12 @@ public class ChatMainPanel extends javax.swing.JPanel {
 
 
 
-    private Timer otherThreadsCrashHandler;
-    private TimerTask otherThreadsRestartTask;
-    public Timer getOtherThreadsCrashHandler()
-    {
-        return otherThreadsCrashHandler;
-    }
+//    private Timer otherThreadsCrashHandler;
+//    private TimerTask otherThreadsRestartTask;
+//    public Timer getOtherThreadsCrashHandler()
+//    {
+//        return otherThreadsCrashHandler;
+//    }
 
 
 
@@ -118,6 +127,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
     private ArrayList<ChatListComponentPanel> chatListComponents = new ArrayList<>();
     private ChatListComponentPanel activeChatComponentReference = null;
     private long numberOfLoadedMessagesInActiveChat = 0;
+    private ArrayList<Object> chatMessagesListComponents = new ArrayList<>();
     private ChangeListener loadOlderMessagesEventListener = new ChangeListener() {
         @Override
         public void stateChanged(ChangeEvent e) {
@@ -151,117 +161,97 @@ public class ChatMainPanel extends javax.swing.JPanel {
     public ChatMainPanel() {
         initComponents();
 
-        networkStatusUpdater = new SwingWorker<Void, Void>() {
+        networkStatusUpdater = new Timer();
+        networkStatusUpdateTask = new TimerTask() {
             @Override
-            protected Void doInBackground() throws Exception {
-                Thread.sleep(5000);
-                while(true)
-                {
-                    if(NetworkManager.isConnected() && NetworkManager.isLoggedIn())
-                    {
+            public void run() {
+                try {
+                    if (NetworkManager.isConnected() && NetworkManager.isLoggedIn()) {
                         appStatusTextLabel.setText("Online");
                         appStatusColorLabel.setBackground(new Color(0, 255, 0));
-                    }
-                    else if(NetworkManager.isConnected())
-                    {
+                    } else if (NetworkManager.isConnected()) {
                         appStatusTextLabel.setText("Logging in");
                         appStatusColorLabel.setBackground(new Color(253, 212, 79));
-                    }
-                    else
-                    {
+                    } else {
                         appStatusTextLabel.setText("Offline");
                         appStatusColorLabel.setBackground(new Color(255, 0, 0));
                     }
-                    Thread.sleep((Integer.parseInt(ConfigManager.getConnectionProbeTimePeriod()) * 1000L) > 5000? 5000:(Long.parseLong(ConfigManager.getConnectionProbeTimePeriod()) * 1000));
                 }
-                //return null;
-            }
-        };
-        networkStatusUpdater.execute();
-
-        reloginThread = new SwingWorker<Void, Void>() {
-            @Override
-            protected Void doInBackground() throws Exception {
-                try{
-                    Thread.sleep(3000);
-                    while(true)
-                    {
-                        if(NetworkManager.isConnected())
-                        {
-                            if(!NetworkManager.isLoggedIn())
-                            {
-                                if(!ConfigManager.getAccountSessionID().equals("null"))
-                                {
-                                    Boolean success = NetworkManager.loginToOldSession(ConfigManager.getAccountID(), ConfigManager.getAccountSessionID());
-                                    if(success != null && !success)
-                                    {
-                                        JOptionPane.showMessageDialog(Main.getMainFrame(), "You have been force logged out due to invalid session ID.\nYou will be moved back to the main menu.\nPlease try logging in again.",
-                                                "User logged out", JOptionPane.ERROR_MESSAGE);
-                                        WindowManager.changeFromChatToSelection(true);
-                                    }
-                                }
-                                else
-                                {
-                                    Boolean success = NetworkManager.reloginToTemporarySession(ConfigManager.getAccountID());
-                                    if(success != null && !success)
-                                    {
-                                        JOptionPane.showMessageDialog(Main.getMainFrame(), "You have been force logged out due to invalid session ID.\nYou will be moved back to the main menu.\nPlease try logging in again.",
-                                                "User logged out", JOptionPane.ERROR_MESSAGE);
-                                        WindowManager.changeFromChatToSelection(true);
-                                    }
-                                }
-                            }
-                        }
-                        Thread.sleep(Long.parseLong(ConfigManager.getConnectionProbeTimePeriod()) * 1000L);
-                    }
-                }
-                catch(Exception e)
+                catch (Exception e)
                 {
 
                 }
-                return null;
             }
         };
-        reloginThread.execute();
+        networkStatusUpdater.schedule(networkStatusUpdateTask, 5000, 2000);
 
-        newChatAndMessageReceiverThread = new SwingWorker<Void, Void>() {
+        reloginTimer = new Timer();
+        reloginTask = new TimerTask() {
             @Override
-            protected Void doInBackground() throws Exception {
-                try{
-                    Thread.sleep(3000);
-                    while(true)
-                    {
-                        if(NetworkManager.isConnected())
-                        {
-                            if(NetworkManager.isLoggedIn())
-                            {
-                                Boolean success = NetworkManager.checkForNewChats();
-                                if(success != null && success)
-                                    updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
-
-                                success = NetworkManager.checkForChatInfoUpdates();
-                                if(success != null && success)
-                                    updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
-
-                                success = NetworkManager.checkForNewMessages();
-                                if(success != null && success)
-                                    updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+            public void run() {
+                try {
+                    if (NetworkManager.isConnected()) {
+                        if (!NetworkManager.isLoggedIn()) {
+                            if (!ConfigManager.getAccountSessionID().equals("null")) {
+                                Boolean success = NetworkManager.loginToOldSession(ConfigManager.getAccountID(), ConfigManager.getAccountSessionID());
+                                if (success != null && !success) {
+                                    DatabaseManager.closeDB();
+                                    JOptionPane.showMessageDialog(Main.getMainFrame(), "You have been force logged out due to invalid session ID.\nYou will be moved back to the main menu.\nPlease try logging in again.",
+                                            "User logged out", JOptionPane.ERROR_MESSAGE);
+                                    WindowManager.changeFromChatToSelection(true);
+                                }
+                            } else {
+                                Boolean success = NetworkManager.reloginToTemporarySession(ConfigManager.getAccountID());
+                                if (success != null && !success) {
+                                    DatabaseManager.closeDB();
+                                    JOptionPane.showMessageDialog(Main.getMainFrame(), "You have been force logged out due to invalid session ID.\nYou will be moved back to the main menu.\nPlease try logging in again.",
+                                            "User logged out", JOptionPane.ERROR_MESSAGE);
+                                    WindowManager.changeFromChatToSelection(true);
+                                }
                             }
                         }
-                        Thread.sleep((Integer.parseInt(ConfigManager.getConnectionProbeTimePeriod()) * 1000L) > 3000? 3000:(Long.parseLong(ConfigManager.getConnectionProbeTimePeriod()) * 1000));
                     }
                 }
-                catch(Exception e)
+                catch (Exception e)
                 {
 
                 }
-                return null;
             }
         };
-        newChatAndMessageReceiverThread.execute();
+        reloginTimer.schedule(reloginTask, 3000, Long.parseLong(ConfigManager.getConnectionProbeTimePeriod()) * 1000L);
+
+        newChatAndMessageReceiver = new Timer();
+        newChatAndMessageReceivingTask = new TimerTask() {
+            @Override
+            public void run() {
+                try {
+                    if (NetworkManager.isConnected()) {
+                        if (NetworkManager.isLoggedIn()) {
+                            Boolean success = NetworkManager.checkForNewChats();
+                            if (success != null && success)
+                                updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+
+                            success = NetworkManager.checkForChatInfoUpdates();
+                            if (success != null && success)
+                                updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+
+                            success = NetworkManager.checkForNewMessages();
+                            if (success != null && success)
+                                updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+
+                }
+            }
+        };
+        newChatAndMessageReceiver.schedule(newChatAndMessageReceivingTask, 3000, 3000);
 
 
-        String[][] unsentReadReceipts = DatabaseManager.makeQuery("select chat_id, message_id from unsentReadReceipts;");
+
+        String[][] unsentReadReceipts = DatabaseManager.makeQuery("select chat_id, message_id from unsentReadReceipts;", null);
         if(unsentReadReceipts != null)
         {
             for(int i = 0; i < unsentReadReceipts.length; i++)
@@ -269,28 +259,25 @@ public class ChatMainPanel extends javax.swing.JPanel {
                 readReceiptsToBeSent.add(new String[]{unsentReadReceipts[i][0], unsentReadReceipts[i][1]});
             }
         }
-        messageReadReceiptsUpdatorThread = new SwingWorker<Void, Void>() {
+        messageReadReceiptsUpdator = new Timer();
+        readReceiptUpdatingTask = new TimerTask() {
             @Override
-            protected Void doInBackground() throws Exception {
-                try
-                {
-                    Thread.sleep(5000);
-                    while(true)
+            public void run() {
+                try{
+                    if(NetworkManager.isConnected())
                     {
-                        if(NetworkManager.isConnected())
+                        if(NetworkManager.isLoggedIn())
                         {
-                            if(NetworkManager.isLoggedIn())
+                            Boolean success = NetworkManager.checkForNewReadReceipts();
+                            if(success != null && success)
+                                updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+
+                            while(!readReceiptsToBeSent.isEmpty())
                             {
-                                Boolean success = NetworkManager.checkForNewReadReceipts();
-                                if(success != null && success)
-                                    updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+                                String chatID = readReceiptsToBeSent.get(0)[0];
+                                String messageID = readReceiptsToBeSent.get(0)[1];
 
-                                while(!readReceiptsToBeSent.isEmpty())
-                                {
-                                    String chatID = readReceiptsToBeSent.get(0)[0];
-                                    String messageID = readReceiptsToBeSent.get(0)[1];
-
-                                    //disable read receipt 3 for group chats by not actually sending any such receipts to server
+                                //disable read receipt 3 for group chats by not actually sending any such receipts to server
 //                                    String[][] chatType = DatabaseManager.makeQuery("select chat_type from chat where chat_id = " + chatID + ";");
 //                                    if(chatType == null || chatType.length == 0 || chatType[0][0].equals("GROUP"))
 //                                    {
@@ -299,28 +286,26 @@ public class ChatMainPanel extends javax.swing.JPanel {
 //                                        continue;
 //                                    }
 
-                                    success = NetworkManager.sendNewReadReceipts(chatID, messageID);
-                                    if(success == null || !success)
-                                        break;
-                                    else if(success)
-                                    {
-                                        DatabaseManager.makeUpdate("delete from unsentReadReceipts where chat_id = " + chatID + " and message_id = " + messageID + ";");
-                                        readReceiptsToBeSent.remove(0);
-                                    }
+                                success = NetworkManager.sendNewReadReceipts(chatID, messageID);
+                                if(success == null || !success)
+                                    break;
+                                else if(success)
+                                {
+                                    DatabaseManager.makeUpdate("delete from unsentReadReceipts where chat_id = " + chatID + " and message_id = " + messageID + ";", null);
+                                    readReceiptsToBeSent.remove(0);
                                 }
                             }
                         }
-                        Thread.sleep((Integer.parseInt(ConfigManager.getConnectionProbeTimePeriod()) * 1000L) > 3000? 3000:(Long.parseLong(ConfigManager.getConnectionProbeTimePeriod()) * 1000));
                     }
                 }
-                catch(Exception e)
+                catch (Exception e)
                 {
 
                 }
-                return null;
             }
         };
-        messageReadReceiptsUpdatorThread.execute();
+        messageReadReceiptsUpdator.schedule(readReceiptUpdatingTask, 3000, 3000);
+
 
         periodicPanelUpdatorTimer = new Timer();
         LocalDate currentDate = LocalDate.now();
@@ -328,7 +313,13 @@ public class ChatMainPanel extends javax.swing.JPanel {
         chatPanelUpdateTask = new TimerTask() {
             @Override
             public void run() {
-                updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+                try {
+                    updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+                }
+                catch (Exception e)
+                {
+
+                }
             }
         };
         periodicPanelUpdatorTimer.scheduleAtFixedRate(chatPanelUpdateTask, Date.valueOf(nextDayDate), 86400000);
@@ -338,28 +329,45 @@ public class ChatMainPanel extends javax.swing.JPanel {
         unknownInfoCheckAndFindTask = new TimerTask() {
             @Override
             public void run() {
-                String[][] unknownUsers = DatabaseManager.makeQuery("select * from unknownUsers;");
-                if(unknownUsers == null || unknownUsers.length == 0)
-                {
-                    return;
+                try {
+                    boolean anyUpdates = false;
+
+                    String[][] unknownUsers = DatabaseManager.makeQuery("select * from unknownUsers;", null);
+                    if (unknownUsers != null && unknownUsers.length > 0) {
+                        for (int i = 0; i < unknownUsers.length; i++) {
+                            Boolean success = NetworkManager.retrieveUnknownUserDisplayName(unknownUsers[i][0]);
+                            if (success == null)
+                                return;
+                            if (!success)
+                                continue;
+                            anyUpdates = true;
+                        }
+                    }
+
+                    String[][] unknownChats = DatabaseManager.makeQuery("select * from unknownChats;", null);
+                    if (unknownChats != null && unknownChats.length > 0) {
+                        for (int i = 0; i < unknownChats.length; i++) {
+                            Boolean success = NetworkManager.retrieveUnknownChatInfo(unknownChats[i][0]);
+                            if (success == null)
+                                return;
+                            if (!success)
+                                continue;
+                            anyUpdates = true;
+                        }
+                    }
+
+                    if (anyUpdates)
+                        updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
                 }
-                boolean anyUpdates = false;
-                for(int i = 0; i < unknownUsers.length; i++)
+                catch (Exception e)
                 {
-                    Boolean success = NetworkManager.retrieveUnknownUserDisplayName(unknownUsers[i][0]);
-                    if(success == null)
-                        return;
-                    if(!success)
-                        continue;
-                    anyUpdates = true;
+
                 }
-                if(anyUpdates)
-                    updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
             }
         };
         unknownInfoFinderTimer.schedule(unknownInfoCheckAndFindTask, 10000, 60000);
 
-        String[][] chatList = DatabaseManager.makeQuery("select chat_id, chat_type, chat_name, chat_participants from chat order by last_message_timestamp desc;");
+        String[][] chatList = DatabaseManager.makeQuery("select chat_id, chat_type, chat_name, chat_participants from chat order by last_message_timestamp desc;", null);
         if(chatList != null && chatList.length > 0)
         {
             for(int i = 0; i < chatList.length; i++)
@@ -367,7 +375,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
                 ChatListComponentPanel chatListComponent = new ChatListComponentPanel(chatList[i][0], getSelfReference());
                 chatListComponent.getChatNameLabel().setText(chatList[i][2]);
                 chatListComponent.getChatNameLabel().setToolTipText(chatList[i][2]);
-                String[][] chatInfo = DatabaseManager.makeQuery("select message_timestamp, message_content, from_account_id, sent_to_server from chat" + chatList[i][0] + " where message_timestamp = (select max(message_timestamp) from chat" + chatList[i][0] + ");");
+                String[][] chatInfo = DatabaseManager.makeQuery("select message_timestamp, message_content, from_account_id, sent_to_server from chat" + chatList[i][0] + " where message_timestamp = (select max(message_timestamp) from chat" + chatList[i][0] + ");", null);
                 if(chatInfo != null && chatInfo.length == 1)
                 {
                     //TODO: verify later how timestamp is stored and displayed and add required code to display them properly instead of the entire thing, most likely use Date.getTime()
@@ -401,11 +409,11 @@ public class ChatMainPanel extends javax.swing.JPanel {
                         }
                         else
                         {
-                            String[][] senderName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + senderID + "';");
+                            String[][] senderName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = ?;", new boolean[]{false}, senderID);
                             if(senderName == null || senderName.length == 0)
                             {
                                 chatListComponent.getChatLastMessageLabel().setText(senderID + ": " + chatInfo[0][1]);
-                                DatabaseManager.makeUpdate("insert into unknownUsers values('" + senderID + "');");
+                                DatabaseManager.makeUpdate("insert into unknownUsers values(?);", new boolean[]{false}, senderID);
                             }
                             else
                             {
@@ -440,7 +448,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
                     {
                         chatParticipantsCompareQueryString = chatParticipantsCompareQueryString + " or from_account_id = '" + participants[j] + "'";
                     }
-                    String[][] unreadMessagesCount = DatabaseManager.makeQuery("select count(*) from chat" + chatList[i][0] + " where sent_to_server = 2 and (from_account_id = '0000000000000000'" + chatParticipantsCompareQueryString + ");");
+                    String[][] unreadMessagesCount = DatabaseManager.makeQuery("select count(*) from chat" + chatList[i][0] + " where sent_to_server = 2 and (from_account_id = '0000000000000000'" + chatParticipantsCompareQueryString + ");", null);
                     if(unreadMessagesCount != null && Integer.parseInt(unreadMessagesCount[0][0]) > 0)
                     {
                         chatListComponent.getChatLastMessageLabel().setIcon(new ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("reminder (2).png"))));
@@ -498,11 +506,11 @@ public class ChatMainPanel extends javax.swing.JPanel {
         noChatSelectedLabel.setEnabled(false);
         chatMessagesListScrollPanel.getViewport().setView(noChatSelectedLabel);
 
-        String[][] allChats = DatabaseManager.makeQuery("select chat_id from chat;");
+        String[][] allChats = DatabaseManager.makeQuery("select chat_id from chat;", null);
         if(allChats != null) {
             for (int i = 0; i < allChats.length; i++) {
                 String chatID = allChats[i][0];
-                String[][] unsentMessages = DatabaseManager.makeQuery("select message_id from chat" + chatID + " where sent_to_server = 0 and from_account_id = '" + ConfigManager.getAccountID() + "';");
+                String[][] unsentMessages = DatabaseManager.makeQuery("select message_id from chat" + chatID + " where sent_to_server = 0 and from_account_id = ?;", new boolean[]{false}, ConfigManager.getAccountID());
                 if(unsentMessages != null) {
                     for (int j = 0; j < unsentMessages.length; j++) {
                         messagesToBeSentList.add(new String[]{chatID, unsentMessages[j][0]});
@@ -512,291 +520,70 @@ public class ChatMainPanel extends javax.swing.JPanel {
         }
 
         //TODO: Implement message sending part of the thread by taking the chat id and message id and sending it and updating database with the results
-        newMessageSenderThread = new SwingWorker<Void, Void>() {
+        newMessageSender = new Timer();
+        newMessageSendingTask = new TimerTask() {
             @Override
-            protected Void doInBackground() throws Exception {
-                try
-                {
-                    Thread.sleep(5000);
-                    while(true)
+            public void run() {
+                try{
+                    if(NetworkManager.isConnected())
                     {
-                        if(NetworkManager.isConnected())
+                        if(NetworkManager.isLoggedIn())
                         {
-                            if(NetworkManager.isLoggedIn())
+                            while(!messagesToBeSentList.isEmpty())
                             {
-                                while(!messagesToBeSentList.isEmpty())
+                                String[] messageToBeSent = messagesToBeSentList.get(0);
+                                String chatID = messageToBeSent[0];
+                                String messageID = messageToBeSent[1];
+                                String[][] messageInfo = DatabaseManager.makeQuery("select message_type, message_content from chat" + chatID + " where message_id = " + messageID + ";", null);
+                                if(messageInfo != null && messageInfo.length == 1)
                                 {
-                                    String[] messageToBeSent = messagesToBeSentList.get(0);
-                                    String chatID = messageToBeSent[0];
-                                    String messageID = messageToBeSent[1];
-                                    String[][] messageInfo = DatabaseManager.makeQuery("select message_type, message_content from chat" + chatID + " where message_id = " + messageID + ";");
-                                    if(messageInfo != null && messageInfo.length == 1)
+                                    if(messageInfo[0][0].equals("DOCUMENT"))
                                     {
-                                        Boolean success = NetworkManager.sendNewMessage(chatID, messageID, messageInfo[0][0], messageInfo[0][1]);
-                                        if(success == null)
-                                            break;
-                                        else if(!success)
-                                            break;
-                                        else if(success)
+                                        String[][] documentDetails = DatabaseManager.makeQuery("select * from mediaMessagesDetails where chat_id = " + chatID + " and message_id = " + messageID + ";", null);
+                                        String documentSize = "0";
+                                        if(documentDetails != null && documentDetails.length > 0)
                                         {
-                                            messagesToBeSentList.remove(0);
-                                            updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+                                            documentSize = documentDetails[0][2];
                                         }
+                                        messageInfo[0][1] = messageInfo[0][1] + "|" + documentSize;
                                     }
-                                    else
+                                    Boolean success = NetworkManager.sendNewMessage(chatID, messageID, messageInfo[0][0], messageInfo[0][1]);
+                                    if(success == null)
+                                        break;
+                                    else if(!success)
+                                        break;
+                                    else if(success)
                                     {
                                         messagesToBeSentList.remove(0);
+                                        // TODO: This frequent update after sending each message may be causing UI freeze after sending multiple messages quickly
+                                        //  Use an update boolean variable to see if any message has been sent, and then only do an UI update once
+                                        //  But then, an UI update might take a long time if there are a lot of messages queued up to be sent
+                                        //  Maybe count of number of successful sends and do an update every 5 sends and if do another one at the end
+                                        //  Check at the end if the number of sends is divisible by 5 or not, do the update only if its not
+                                        //  Otherwise two UI updates will overlap due to being done one after another
+                                        updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
                                     }
+                                }
+                                else
+                                {
+                                    messagesToBeSentList.remove(0);
                                 }
                             }
                         }
-                        Thread.sleep((Integer.parseInt(ConfigManager.getConnectionProbeTimePeriod()) * 1000L) > 3000? 3000:(Long.parseLong(ConfigManager.getConnectionProbeTimePeriod()) * 1000));
                     }
                 }
                 catch (Exception e)
                 {
 
                 }
-                return null;
             }
         };
-        newMessageSenderThread.execute();
+        newMessageSender.schedule(newMessageSendingTask, 3000, 3000);
+
 
         chatMessagesListScrollPanel.getViewport().addChangeListener(loadOlderMessagesEventListener);
 
 
-
-        //TODO: Update the swingworker code here too if any changes are made above
-        otherThreadsCrashHandler = new Timer();
-        otherThreadsRestartTask = new TimerTask() {
-            @Override
-            public void run() {
-                if(networkStatusUpdater.isDone())
-                {
-                    //System.out.println("test");
-                    networkStatusUpdater = new SwingWorker<Void, Void>() {
-                        @Override
-                        protected Void doInBackground() throws Exception {
-                            Thread.sleep(5000);
-                            while(true)
-                            {
-                                if(NetworkManager.isConnected() && NetworkManager.isLoggedIn())
-                                {
-                                    appStatusTextLabel.setText("Online");
-                                    appStatusColorLabel.setBackground(new Color(0, 255, 0));
-                                }
-                                else if(NetworkManager.isConnected())
-                                {
-                                    appStatusTextLabel.setText("Logging in");
-                                    appStatusColorLabel.setBackground(new Color(253, 212, 79));
-                                }
-                                else
-                                {
-                                    appStatusTextLabel.setText("Offline");
-                                    appStatusColorLabel.setBackground(new Color(255, 0, 0));
-                                }
-                                Thread.sleep((Integer.parseInt(ConfigManager.getConnectionProbeTimePeriod()) * 1000L) > 5000? 5000:(Long.parseLong(ConfigManager.getConnectionProbeTimePeriod()) * 1000));
-                            }
-                            //return null;
-                        }
-                    };
-                    networkStatusUpdater.execute();
-                }
-                if(reloginThread.isDone())
-                {
-                    //System.out.println("test");
-                    reloginThread = new SwingWorker<Void, Void>() {
-                        @Override
-                        protected Void doInBackground() throws Exception {
-                            try{
-                                Thread.sleep(3000);
-                                while(true)
-                                {
-                                    if(NetworkManager.isConnected())
-                                    {
-                                        if(!NetworkManager.isLoggedIn())
-                                        {
-                                            if(!ConfigManager.getAccountSessionID().equals("null"))
-                                            {
-                                                Boolean success = NetworkManager.loginToOldSession(ConfigManager.getAccountID(), ConfigManager.getAccountSessionID());
-                                                if(success != null && !success)
-                                                {
-                                                    JOptionPane.showMessageDialog(Main.getMainFrame(), "You have been force logged out due to invalid session ID.\nYou will be moved back to the main menu.\nPlease try logging in again.",
-                                                            "User logged out", JOptionPane.ERROR_MESSAGE);
-                                                    WindowManager.changeFromChatToSelection(true);
-                                                }
-                                            }
-                                            else
-                                            {
-                                                Boolean success = NetworkManager.reloginToTemporarySession(ConfigManager.getAccountID());
-                                                if(success != null && !success)
-                                                {
-                                                    JOptionPane.showMessageDialog(Main.getMainFrame(), "You have been force logged out due to invalid session ID.\nYou will be moved back to the main menu.\nPlease try logging in again.",
-                                                            "User logged out", JOptionPane.ERROR_MESSAGE);
-                                                    WindowManager.changeFromChatToSelection(true);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Thread.sleep(Long.parseLong(ConfigManager.getConnectionProbeTimePeriod()) * 1000L);
-                                }
-                            }
-                            catch(Exception e)
-                            {
-
-                            }
-                            return null;
-                        }
-                    };
-                    reloginThread.execute();
-                }
-                if(newChatAndMessageReceiverThread.isDone())
-                {
-                    //System.out.println("test");
-                    newChatAndMessageReceiverThread = new SwingWorker<Void, Void>() {
-                        @Override
-                        protected Void doInBackground() throws Exception {
-                            try{
-                                Thread.sleep(3000);
-                                while(true)
-                                {
-                                    if(NetworkManager.isConnected())
-                                    {
-                                        if(NetworkManager.isLoggedIn())
-                                        {
-                                            Boolean success = NetworkManager.checkForNewChats();
-                                            if(success != null && success)
-                                                updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
-
-                                            success = NetworkManager.checkForNewMessages();
-                                            if(success != null && success)
-                                                updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
-                                        }
-                                    }
-                                    Thread.sleep((Integer.parseInt(ConfigManager.getConnectionProbeTimePeriod()) * 1000L) > 3000? 3000:(Long.parseLong(ConfigManager.getConnectionProbeTimePeriod()) * 1000));
-                                }
-                            }
-                            catch(Exception e)
-                            {
-
-                            }
-                            return null;
-                        }
-                    };
-                    newChatAndMessageReceiverThread.execute();
-                }
-                if(newMessageSenderThread.isDone())
-                {
-                    //System.out.println("test");
-                    newMessageSenderThread = new SwingWorker<Void, Void>() {
-                        @Override
-                        protected Void doInBackground() throws Exception {
-                            try
-                            {
-                                Thread.sleep(5000);
-                                while(true)
-                                {
-                                    if(NetworkManager.isConnected())
-                                    {
-                                        if(NetworkManager.isLoggedIn())
-                                        {
-                                            while(!messagesToBeSentList.isEmpty())
-                                            {
-                                                String[] messageToBeSent = messagesToBeSentList.get(0);
-                                                String chatID = messageToBeSent[0];
-                                                String messageID = messageToBeSent[1];
-                                                String[][] messageInfo = DatabaseManager.makeQuery("select message_type, message_content from chat" + chatID + " where message_id = " + messageID + ";");
-                                                if(messageInfo != null && messageInfo.length == 1)
-                                                {
-                                                    Boolean success = NetworkManager.sendNewMessage(chatID, messageID, messageInfo[0][0], messageInfo[0][1]);
-                                                    if(success == null)
-                                                        break;
-                                                    else if(!success)
-                                                        break;
-                                                    else if(success)
-                                                    {
-                                                        messagesToBeSentList.remove(0);
-                                                        updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
-                                                    }
-                                                }
-                                                else
-                                                {
-                                                    messagesToBeSentList.remove(0);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Thread.sleep((Integer.parseInt(ConfigManager.getConnectionProbeTimePeriod()) * 1000L) > 3000? 3000:(Long.parseLong(ConfigManager.getConnectionProbeTimePeriod()) * 1000));
-                                }
-                            }
-                            catch (Exception e)
-                            {
-
-                            }
-                            return null;
-                        }
-                    };
-                    newMessageSenderThread.execute();
-                }
-                if(messageReadReceiptsUpdatorThread.isDone())
-                {
-                    //System.out.println("test");
-                    messageReadReceiptsUpdatorThread = new SwingWorker<Void, Void>() {
-                        @Override
-                        protected Void doInBackground() throws Exception {
-                            try
-                            {
-                                Thread.sleep(5000);
-                                while(true)
-                                {
-                                    if(NetworkManager.isConnected())
-                                    {
-                                        if(NetworkManager.isLoggedIn())
-                                        {
-                                            Boolean success = NetworkManager.checkForNewReadReceipts();
-                                            if(success != null && success)
-                                                updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
-
-                                            while(!readReceiptsToBeSent.isEmpty())
-                                            {
-                                                String chatID = readReceiptsToBeSent.get(0)[0];
-                                                String messageID = readReceiptsToBeSent.get(0)[1];
-
-                                                //disable read receipt 3 for group chats by not actually sending any such receipts to server
-//                                                String[][] chatType = DatabaseManager.makeQuery("select chat_type from chat where chat_id = " + chatID + ";");
-//                                                if(chatType == null || chatType.length == 0 || chatType[0][0].equals("GROUP"))
-//                                                {
-//                                                    DatabaseManager.makeUpdate("delete from unsentReadReceipts where chat_id = " + chatID + " and message_id = " + messageID + ";");
-//                                                    readReceiptsToBeSent.remove(0);
-//                                                    continue;
-//                                                }
-
-                                                success = NetworkManager.sendNewReadReceipts(chatID, messageID);
-                                                if(success == null || !success)
-                                                    break;
-                                                else if(success)
-                                                {
-                                                    DatabaseManager.makeUpdate("delete from unsentReadReceipts where chat_id = " + chatID + " and message_id = " + messageID + ";");
-                                                    readReceiptsToBeSent.remove(0);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Thread.sleep((Integer.parseInt(ConfigManager.getConnectionProbeTimePeriod()) * 1000L) > 3000? 3000:(Long.parseLong(ConfigManager.getConnectionProbeTimePeriod()) * 1000));
-                                }
-                            }
-                            catch(Exception e)
-                            {
-
-                            }
-                            return null;
-                        }
-                    };
-                    messageReadReceiptsUpdatorThread.execute();
-                }
-            }
-        };
-        otherThreadsCrashHandler.schedule(otherThreadsRestartTask, 30000, 30000);
 
 
         KeyAdapter enterKeyListener = new KeyAdapter() {
@@ -842,7 +629,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
         chatHeaderParticipantOrOnlineLabel = new javax.swing.JLabel();
         chatHeaderMoreOptionsButton = new javax.swing.JButton();
         chatSendMessagePanel = new javax.swing.JPanel();
-        chatSendMessageOtherTypesToggleButton = new javax.swing.JToggleButton();
+        chatSendOtherTypeMessagesButton = new javax.swing.JButton();
         chatSendMessageField = new javax.swing.JTextField();
         chatSendMessageButton = new javax.swing.JButton();
         chatMessagesListScrollPanel = new javax.swing.JScrollPane();
@@ -1041,6 +828,8 @@ public class ChatMainPanel extends javax.swing.JPanel {
             }
         });
 
+        chatHeaderParticipantOrOnlineLabel.setVerticalAlignment(SwingConstants.TOP);
+        //chatHeaderParticipantOrOnlineLabel.setVerticalTextPosition(SwingConstants.TOP);
         chatHeaderParticipantOrOnlineLabel.setText("placeholderOnlineStatusOrListOfParticipants");
         chatHeaderParticipantOrOnlineLabel.setToolTipText("placeholderOnlineStatusOrListOfParticipantsFull");
         chatHeaderParticipantOrOnlineLabel.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -1092,28 +881,29 @@ public class ChatMainPanel extends javax.swing.JPanel {
                         .addGroup(chatHeaderPanelLayout.createSequentialGroup()
                                 .addContainerGap()
                                 .addGroup(chatHeaderPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                                        .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, chatHeaderPanelLayout.createSequentialGroup()
+                                        .addGroup(chatHeaderPanelLayout.createSequentialGroup()
                                                 .addComponent(chatHeaderNameLabel)
                                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                                                .addComponent(chatHeaderParticipantOrOnlineLabel))
+                                                .addComponent(chatHeaderParticipantOrOnlineLabel, javax.swing.GroupLayout.PREFERRED_SIZE, 16, javax.swing.GroupLayout.PREFERRED_SIZE))
                                         .addGroup(chatHeaderPanelLayout.createSequentialGroup()
                                                 .addGroup(chatHeaderPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                                                         .addComponent(chatHeaderIconLabel, javax.swing.GroupLayout.PREFERRED_SIZE, 42, javax.swing.GroupLayout.PREFERRED_SIZE)
                                                         .addComponent(chatHeaderMoreOptionsButton, javax.swing.GroupLayout.PREFERRED_SIZE, 42, javax.swing.GroupLayout.PREFERRED_SIZE))
                                                 .addGap(0, 0, Short.MAX_VALUE)))
-                                .addContainerGap())
+                                .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
         );
 
         chatSendMessagePanel.setBorder(javax.swing.BorderFactory.createEtchedBorder());
 
-        chatSendMessageOtherTypesToggleButton.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("add.png")))); // NOI18N
-        chatSendMessageOtherTypesToggleButton.setToolTipText("Send document, image, audio, video, etc. (coming soon)");
-        chatSendMessageOtherTypesToggleButton.addActionListener(new java.awt.event.ActionListener() {
+        chatSendOtherTypeMessagesButton.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("add.png")))); // NOI18N
+        chatSendOtherTypeMessagesButton.setToolTipText("Send other files (coming soon)");
+        chatSendOtherTypeMessagesButton.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
-                chatSendMessageOtherTypesToggleButtonActionPerformed(evt);
+                chatSendOtherTypeMessagesButtonActionPerformed(evt);
             }
         });
-        chatSendMessageOtherTypesToggleButton.setEnabled(false);
+        chatSendOtherTypeMessagesButton.setFocusPainted(false);
+        chatSendOtherTypeMessagesButton.setEnabled(false);
 
         chatSendMessageField.setToolTipText("Text message field");
         chatSendMessageField.getDocument().addDocumentListener(new DocumentListener() {
@@ -1148,7 +938,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
                 chatSendMessagePanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                         .addGroup(chatSendMessagePanelLayout.createSequentialGroup()
                                 .addContainerGap()
-                                .addComponent(chatSendMessageOtherTypesToggleButton, javax.swing.GroupLayout.PREFERRED_SIZE, 32, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                .addComponent(chatSendOtherTypeMessagesButton, javax.swing.GroupLayout.PREFERRED_SIZE, 32, javax.swing.GroupLayout.PREFERRED_SIZE)
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                                 .addComponent(chatSendMessageField)
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
@@ -1161,7 +951,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
                                 .addContainerGap()
                                 .addGroup(chatSendMessagePanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                                         .addComponent(chatSendMessageField, javax.swing.GroupLayout.PREFERRED_SIZE, 30, javax.swing.GroupLayout.PREFERRED_SIZE)
-                                        .addComponent(chatSendMessageOtherTypesToggleButton, javax.swing.GroupLayout.PREFERRED_SIZE, 31, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                        .addComponent(chatSendOtherTypeMessagesButton, javax.swing.GroupLayout.PREFERRED_SIZE, 31, javax.swing.GroupLayout.PREFERRED_SIZE)
                                         .addComponent(chatSendMessageButton, javax.swing.GroupLayout.Alignment.TRAILING))
                                 .addContainerGap())
         );
@@ -1271,11 +1061,25 @@ public class ChatMainPanel extends javax.swing.JPanel {
         }
     }
 
+    public void deleteParticularMessageInActiveChat(String messageID)
+    {
+        //System.out.println("Delete " + activeChatComponentReference.getChatID() + " " + messageID);
+        if(activeChatComponentReference != null)
+        {
+            String chatID = activeChatComponentReference.getChatID();
+
+            DatabaseManager.makeUpdate("delete from chat" + chatID + " where message_id = " + messageID + ";", null);
+            DatabaseManager.makeUpdate("delete from mediaMessagesDetails where chat_id = " + chatID + " and message_id = " + messageID + ";", null);
+
+            updateFromDB(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+        }
+    }
+
     private void chatHeaderMoreOptionsButtonActionPerformed(MouseEvent e)
     {
         if(SwingUtilities.isLeftMouseButton(e) && activeChatComponentReference != null)
         {
-            String[][] chatType = DatabaseManager.makeQuery("select chat_type from chat where chat_id = " + activeChatComponentReference.getChatID() + ";");
+            String[][] chatType = DatabaseManager.makeQuery("select chat_type from chat where chat_id = " + activeChatComponentReference.getChatID() + ";", null);
             if(chatType == null || chatType.length == 0)
             {
                 return;
@@ -1346,6 +1150,19 @@ public class ChatMainPanel extends javax.swing.JPanel {
                     return null;
                 }
 
+                String chatID = activeChatComponentReference.getChatID();
+                String[][] chatParticipants = DatabaseManager.makeQuery("select chat_participants from chat where chat_id = " + chatID + ";", null);
+                if(chatParticipants != null && chatParticipants.length > 0)
+                {
+                    int numberOfParticipants = chatParticipants[0][0].split(",").length;
+                    if(numberOfParticipants >= 511)
+                    {
+                        JOptionPane.showMessageDialog(Main.getMainFrame(), "This group has reached the maximum user limit of 512.\nNew users cannot be added until someone leaves the group.",
+                                "User limit reached", JOptionPane.ERROR_MESSAGE);
+                        return null;
+                    }
+                }
+
                 GroupChatAddUserDialog addUserDialog = new GroupChatAddUserDialog(Main.getMainFrame(), true, getSelfReference());
 
                 return null;
@@ -1378,7 +1195,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
                     return null;
                 }
 
-                int response = JOptionPane.showConfirmDialog(Main.getMainFrame(), "Are you sure you want to leave the group chat?", "Leave chat", JOptionPane.YES_NO_OPTION);
+                int response = JOptionPane.showConfirmDialog(Main.getMainFrame(), "Are you sure you want to leave the group chat?", "Leave chat", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
                 if(response == JOptionPane.YES_OPTION)
                 {
                     if(!NetworkManager.isConnected())
@@ -1592,8 +1409,94 @@ public class ChatMainPanel extends javax.swing.JPanel {
         // TODO add your handling code here:
     }
 
-    private void chatSendMessageOtherTypesToggleButtonActionPerformed(java.awt.event.ActionEvent evt) {
+    private void chatSendOtherTypeMessagesButtonActionPerformed(java.awt.event.ActionEvent evt) {
         // TODO add your handling code here:
+        JPopupMenu otherMessageTypeOptionsMenu = new JPopupMenu();
+
+        JMenuItem documentsOption = new JMenuItem("Documents");
+        documentsOption.setFont(documentsOption.getFont().deriveFont(14f).deriveFont(Font.BOLD));
+        documentsOption.setIcon(new ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("file (4).png"))));
+        documentsOption.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                JFileChooser documentChooser = new JFileChooser();
+                documentChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+                documentChooser.setApproveButtonText("Send");
+                documentChooser.setDialogTitle("Choose document(s) to send");
+                documentChooser.setMultiSelectionEnabled(true);
+                int response = documentChooser.showOpenDialog(Main.getMainFrame());
+                if(response == JFileChooser.APPROVE_OPTION)
+                {
+                    File[] selectedFiles = documentChooser.getSelectedFiles();
+                    ArrayList<File> approvedFiles = new ArrayList<>();
+                    for(int i = 0; i < selectedFiles.length; i++)
+                    {
+                        if(selectedFiles[i].exists() && selectedFiles[i].isFile() && selectedFiles[i].canRead())
+                        {
+                            approvedFiles.add(selectedFiles[i]);
+                        }
+                    }
+
+                    if(approvedFiles.isEmpty())
+                    {
+                        JOptionPane.showMessageDialog(Main.getMainFrame(), "The selected file(s) are invalid.\nThey either do not exist or is inaccessible.", "Invalid file(s)", JOptionPane.ERROR_MESSAGE);
+                        chatSendMessageField.grabFocus();
+                        return;
+                    }
+                    if(approvedFiles.size() != selectedFiles.length)
+                    {
+                        int sendRestResponse = JOptionPane.showConfirmDialog(Main.getMainFrame(), "One or more selected file(s) are invalid.\nThey either do not exist or is inaccessible.\nDo you want to continue sending the rest valid ones?", "Invalid file(s)", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                        if(sendRestResponse != JOptionPane.YES_OPTION)
+                        {
+                            chatSendMessageField.grabFocus();
+                            return;
+                        }
+                    }
+
+                    for(int i = 0; i < approvedFiles.size(); i++) {
+                        String chatID = activeChatComponentReference.getChatID();
+                        Long messageID;
+                        Long messageTimestamp = System.currentTimeMillis();
+                        String messageType = "DOCUMENT";
+                        String messageContent = approvedFiles.get(i).getName();
+                        String[][] unsentMessages = DatabaseManager.makeQuery("select message_id from chat" + chatID + " where sent_to_server = 0;", null);
+                        if (unsentMessages != null && unsentMessages.length > 0) {
+                            messageID = Long.parseLong(DatabaseManager.makeQuery("select max(message_id) from chat" + chatID + ";", null)[0][0]) + 1;
+                        } else {
+                            messageID = Long.parseLong(DatabaseManager.makeQuery("select max(message_id) from chat" + chatID + ";", null)[0][0]) + 1000001;
+                        }
+
+                        DatabaseManager.makeUpdate("insert into chat" + chatID + " values(" + messageID + ", ?, 0, " + messageTimestamp + ", '" + messageType + "', ?);", new boolean[]{false, false}, ConfigManager.getAccountID(), messageContent);
+                        if ((new BigInteger(DatabaseManager.makeQuery("select last_message_timestamp from chat where chat_id = " + chatID + ";", null)[0][0])).compareTo(new BigInteger(String.valueOf(messageTimestamp))) == -1) {
+                            DatabaseManager.makeUpdate("update chat set last_message_timestamp = " + messageTimestamp + " where chat_id = " + chatID + ";", null);
+                        }
+                        long documentSize = approvedFiles.get(i).length();
+                        DatabaseManager.makeUpdate("insert into mediaMessagesDetails values(" + chatID + ", " + messageID + ", '" + documentSize + "');", null);
+                        // TODO: When sending document, after it is sent to server, make an update in the media details table
+                        //  updating the row with old message id and replacing it with the new message id received from server
+                        messagesToBeSentList.add(new String[]{chatID, String.valueOf(messageID)});
+                    }
+                    updateFromDB();
+                    chatSendMessageField.grabFocus();
+                }
+            }
+        });
+        otherMessageTypeOptionsMenu.add(documentsOption);
+
+//        JMenuItem imagesOption = new JMenuItem("Images");
+//        imagesOption.setFont(imagesOption.getFont().deriveFont(14f).deriveFont(Font.BOLD));
+//        otherMessageTypeOptionsMenu.add(imagesOption);
+//
+//        JMenuItem audiosOption = new JMenuItem("Audios");
+//        audiosOption.setFont(audiosOption.getFont().deriveFont(14f).deriveFont(Font.BOLD));
+//        otherMessageTypeOptionsMenu.add(audiosOption);
+//
+//        JMenuItem videosOption = new JMenuItem("Videos");
+//        videosOption.setFont(videosOption.getFont().deriveFont(14f).deriveFont(Font.BOLD));
+//        otherMessageTypeOptionsMenu.add(videosOption);
+
+        otherMessageTypeOptionsMenu.show(chatSendOtherTypeMessagesButton, 0, 0);
+        otherMessageTypeOptionsMenu.show(chatSendOtherTypeMessagesButton, 0, -otherMessageTypeOptionsMenu.getHeight());
     }
 
     private void chatSendMessageFieldActionPerformed() {
@@ -1611,7 +1514,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
     synchronized private void loadOlderMessages()
     {
         //System.out.println("Load older messages called");
-        String[][] fullMessageCountInActiveChat = DatabaseManager.makeQuery("select count(*) from chat" + activeChatComponentReference.getChatID() + ";");
+        String[][] fullMessageCountInActiveChat = DatabaseManager.makeQuery("select count(*) from chat" + activeChatComponentReference.getChatID() + ";", null);
         if(fullMessageCountInActiveChat != null && Long.parseLong(fullMessageCountInActiveChat[0][0]) > numberOfLoadedMessagesInActiveChat)
         {
 //            JScrollBar chatMessagesListScrollBar = chatMessagesListScrollPanel.getVerticalScrollBar();
@@ -1638,20 +1541,20 @@ public class ChatMainPanel extends javax.swing.JPanel {
         String messageType = "TEXT";
         String messageContent = chatSendMessageField.getText();
         chatSendMessageField.setText("");
-        String[][] unsentMessages = DatabaseManager.makeQuery("select message_id from chat" + chatID + " where sent_to_server = 0;");
+        String[][] unsentMessages = DatabaseManager.makeQuery("select message_id from chat" + chatID + " where sent_to_server = 0;", null);
         if(unsentMessages != null && unsentMessages.length > 0)
         {
-            messageID = Long.parseLong(DatabaseManager.makeQuery("select max(message_id) from chat" + chatID + ";")[0][0]) + 1;
+            messageID = Long.parseLong(DatabaseManager.makeQuery("select max(message_id) from chat" + chatID + ";", null)[0][0]) + 1;
         }
         else
         {
-            messageID = Long.parseLong(DatabaseManager.makeQuery("select max(message_id) from chat" + chatID + ";")[0][0]) + 1000001;
+            messageID = Long.parseLong(DatabaseManager.makeQuery("select max(message_id) from chat" + chatID + ";", null)[0][0]) + 1000001;
         }
 
-        DatabaseManager.makeUpdate("insert into chat" + chatID + " values(" + messageID + ", '" + ConfigManager.getAccountID() + "', 0, " + messageTimestamp + ", '" + messageType + "', '" + messageContent + "');");
-        if((new BigInteger(DatabaseManager.makeQuery("select last_message_timestamp from chat where chat_id = " + chatID + ";")[0][0])).compareTo(new BigInteger(String.valueOf(messageTimestamp))) == -1)
+        DatabaseManager.makeUpdate("insert into chat" + chatID + " values(" + messageID + ", ?, 0, " + messageTimestamp + ", '" + messageType + "', ?);", new boolean[]{false, false}, ConfigManager.getAccountID(), messageContent);
+        if((new BigInteger(DatabaseManager.makeQuery("select last_message_timestamp from chat where chat_id = " + chatID + ";", null)[0][0])).compareTo(new BigInteger(String.valueOf(messageTimestamp))) == -1)
         {
-            DatabaseManager.makeUpdate("update chat set last_message_timestamp = " + messageTimestamp + " where chat_id = " + chatID + ";");
+            DatabaseManager.makeUpdate("update chat set last_message_timestamp = " + messageTimestamp + " where chat_id = " + chatID + ";", null);
         }
         updateFromDB();
         messagesToBeSentList.add(new String[]{chatID, String.valueOf(messageID)});
@@ -1685,7 +1588,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
             return;
         }
         if(response == JOptionPane.YES_OPTION) {
-            DatabaseManager.makeUpdate("delete from chat" + chatID + ";");
+            DatabaseManager.makeUpdate("delete from chat" + chatID + ";", null);
             updateFromDB();
             JOptionPane.showMessageDialog(Main.getMainFrame(), "Chat \"" + chatName + "\" has been successfully deleted.", "Chat deleted", JOptionPane.INFORMATION_MESSAGE);
             deleteChatButton.setSelected(false);
@@ -1693,6 +1596,9 @@ public class ChatMainPanel extends javax.swing.JPanel {
     }
 
     synchronized public void makeChatComponentActive(ChatListComponentPanel componentReference) {
+//        while(guiUpdateInProgress);
+//        guiUpdateInProgress = true;
+
         if (deleteChatButton.isSelected()) {
             deleteChat(componentReference);
             return;
@@ -1716,11 +1622,12 @@ public class ChatMainPanel extends javax.swing.JPanel {
             activeChatComponentReference.dehighlightPanel();
             activeChatComponentReference = null;
             numberOfLoadedMessagesInActiveChat = 0;
+            chatMessagesListComponents.clear();
 
             chatMessagesListScrollPanel.getViewport().setView(null);
             chatHeaderPanel.setVisible(false);
             chatSendMessagePanel.setVisible(false);
-            chatSendMessageOtherTypesToggleButton.setSelected(false);
+            chatSendOtherTypeMessagesButton.setSelected(false);
             chatSendMessageField.setText("");
             chatHeaderNameLabel.setText("placeholderChatName");
             chatHeaderNameLabel.setToolTipText("placeholderChatName");
@@ -1744,7 +1651,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
         chatHeaderParticipantOrOnlineLabel.setIcon(null);
 
         String chatType = "";
-        String[][] chatInfo = DatabaseManager.makeQuery("select * from chat where chat_id = " + chatID + ";");
+        String[][] chatInfo = DatabaseManager.makeQuery("select * from chat where chat_id = " + chatID + ";", null);
         if (chatInfo != null && chatInfo.length > 0) {
             chatType = chatInfo[0][3];
         }
@@ -1756,25 +1663,31 @@ public class ChatMainPanel extends javax.swing.JPanel {
             onlineStatusUpdateTimer.schedule(new TimerTask() {
                 @Override
                 public void run() {
-                    //System.out.println("Chat ID " + chatID + " checking");
-                    if (activeChatComponentReference == null || !activeChatComponentReference.getChatID().equals(chatID)) {
-                        cancel();
-                        return;
+                    try {
+                        //System.out.println("Chat ID " + chatID + " checking");
+                        if (activeChatComponentReference == null || !activeChatComponentReference.getChatID().equals(chatID)) {
+                            cancel();
+                            return;
+                        }
+                        Boolean online = NetworkManager.checkIfUserIsOnline(otherParticipantID);
+                        if (activeChatComponentReference == null || !activeChatComponentReference.getChatID().equals(chatID)) {
+                            cancel();
+                            return;
+                        }
+                        if (online == null) {
+                            chatHeaderParticipantOrOnlineLabel.setText("");
+                            chatHeaderParticipantOrOnlineLabel.setIcon(null);
+                        } else if (!online) {
+                            chatHeaderParticipantOrOnlineLabel.setText("offline");
+                            chatHeaderParticipantOrOnlineLabel.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("red circle.png"))));
+                        } else if (online) {
+                            chatHeaderParticipantOrOnlineLabel.setText("online");
+                            chatHeaderParticipantOrOnlineLabel.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("green circle.png"))));
+                        }
                     }
-                    Boolean online = NetworkManager.checkIfUserIsOnline(otherParticipantID);
-                    if (activeChatComponentReference == null || !activeChatComponentReference.getChatID().equals(chatID)) {
-                        cancel();
-                        return;
-                    }
-                    if (online == null) {
-                        chatHeaderParticipantOrOnlineLabel.setText("");
-                        chatHeaderParticipantOrOnlineLabel.setIcon(null);
-                    } else if (!online) {
-                        chatHeaderParticipantOrOnlineLabel.setText("offline");
-                        chatHeaderParticipantOrOnlineLabel.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("red circle.png"))));
-                    } else if (online) {
-                        chatHeaderParticipantOrOnlineLabel.setText("online");
-                        chatHeaderParticipantOrOnlineLabel.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("green circle.png"))));
+                    catch (Exception e)
+                    {
+
                     }
                 }
             }, 1000, 2000);
@@ -1784,9 +1697,9 @@ public class ChatMainPanel extends javax.swing.JPanel {
             for (int i = 0; i < chatParticipantsID.length; i++) {
                 if (chatParticipantsID[i].isEmpty())
                     continue;
-                String[][] participantName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + chatParticipantsID[i] + "';");
+                String[][] participantName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = ?;", new boolean[]{false}, chatParticipantsID[i]);
                 if (participantName == null || participantName.length == 0) {
-                    DatabaseManager.makeUpdate("insert into unknownUsers values('" + chatParticipantsID[i] + "');");
+                    DatabaseManager.makeUpdate("insert into unknownUsers values(?);", new boolean[]{false}, chatParticipantsID[i]);
                     continue;
                 }
                 participantList = participantList + participantName[0][0] + ", ";
@@ -1795,7 +1708,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
             if (indexOfExtraCommaSpace != -1) {
                 participantList = participantList.substring(0, indexOfExtraCommaSpace);
             }
-            chatHeaderParticipantOrOnlineLabel.setText(participantList);
+            chatHeaderParticipantOrOnlineLabel.setText("<html>" + participantList + "</html>");
             chatHeaderParticipantOrOnlineLabel.setToolTipText(participantList);
         }
         if (chatType.equals("PERSONAL")) {
@@ -1805,14 +1718,16 @@ public class ChatMainPanel extends javax.swing.JPanel {
         }
         if (chatType.equals("PERSONAL")) {
             chatHeaderMoreOptionsButton.setVisible(false);
+            chatSendMessageField.setEnabled(true);
+            //chatSendOtherTypeMessagesButton.setEnabled(true);
         } else {
             chatHeaderMoreOptionsButton.setVisible(true);
         }
 
         if (chatType.contains("GROUP")) {
             currentChatParticipantsColorsMapping.clear();
-            String[][] allParticipantsWhoHaveSentAtLeastOneMessage = DatabaseManager.makeQuery("select distinct from_account_id from chat" + chatID + ";");
-            String[][] allCurrentParticipants = DatabaseManager.makeQuery("select chat_participants from chat where chat_id = " + chatID + ";");
+            String[][] allParticipantsWhoHaveSentAtLeastOneMessage = DatabaseManager.makeQuery("select distinct from_account_id from chat" + chatID + ";", null);
+            String[][] allCurrentParticipants = DatabaseManager.makeQuery("select chat_participants from chat where chat_id = " + chatID + ";", null);
             ArrayList<String> allParticipantsPreviousAndNowMerged = new ArrayList<>();
             if (allParticipantsWhoHaveSentAtLeastOneMessage != null) {
                 for (int i = 0; i < allParticipantsWhoHaveSentAtLeastOneMessage.length; i++) {
@@ -1852,21 +1767,25 @@ public class ChatMainPanel extends javax.swing.JPanel {
         layoutConstraints.gridwidth = GridBagConstraints.REMAINDER;
         layoutConstraints.weightx = 1.0;
         //layoutConstraints.anchor = GridBagConstraints.FIRST_LINE_START;
-        String[][] chatMessages = DatabaseManager.makeQuery("select * from chat" + chatID + " order by message_timestamp desc;");
+        String[][] chatMessages = DatabaseManager.makeQuery("select * from chat" + chatID + " order by message_timestamp desc;", null);
         //System.out.println(chatMessages.length);
         if (chatMessages != null) {
             numberOfLoadedMessagesInActiveChat = 0;
+            chatMessagesListComponents.clear();
             for (int i = (chatMessages.length > Integer.parseInt(ConfigManager.getInitialNumberOfMessagesToLoad()) ? (Integer.parseInt(ConfigManager.getInitialNumberOfMessagesToLoad()) - 1) : (chatMessages.length - 1)); i >= 0; i--) {
                 if (chatMessages[i][4].equals("TEXT")) {
                     if (chatMessages[i][1].equals("0000000000000000")) {
                         ChatMessagesListInfoTextComponent newMessage = new ChatMessagesListInfoTextComponent(chatMessages[i][0]);
-                        newMessage.getInfoTextLabel().setText(chatMessages[i][5]);
-                        newMessage.getInfoTextLabel().setToolTipText(chatMessages[i][5]);
+                        newMessage.setMessage(chatMessages[i][5]);
+                        //System.out.println(chatMessagesListScrollPanel.getWidth());
+                        //newMessage.getInfoTextLabel().setToolTipText(chatMessages[i][5]);
                         insideChatMessagesContainer.add(newMessage, layoutConstraints);
                         numberOfLoadedMessagesInActiveChat++;
+                        chatMessagesListComponents.add(newMessage);
                     } else if (chatMessages[i][1].equals(ConfigManager.getAccountID())) {
                         ChatMessagesListSentTextComponent newMessage = new ChatMessagesListSentTextComponent(chatMessages[i][0]);
-                        newMessage.getMessageContentLabel().setText(chatMessages[i][5]);
+                        newMessage.setMessage(chatMessages[i][5]);
+                        //System.out.println(chatMessagesListScrollPanel.getWidth());
                         newMessage.getMessageTimestampLabel().setText(chatMessages[i][3]);
                         //newMessage.getMessageTimestampLabel().setToolTipText(chatMessages[i][3]);
                         if (Integer.parseInt(chatMessages[i][2]) == 3) {
@@ -1880,51 +1799,118 @@ public class ChatMainPanel extends javax.swing.JPanel {
                         }
                         insideChatMessagesContainer.add(newMessage, layoutConstraints);
                         numberOfLoadedMessagesInActiveChat++;
+                        chatMessagesListComponents.add(newMessage);
                     }
                     //else if ((DatabaseManager.makeQuery("select chat_participants from chat where chat_id = " + chatID + ";"))[0][0].contains(chatMessages[i][1])) {
                     else {
                         ChatMessagesListReceivedTextComponent newMessage = new ChatMessagesListReceivedTextComponent(chatMessages[i][0]);
+                        //System.out.println(chatMessagesListScrollPanel.getWidth());
                         if (chatType.equals("PERSONAL")) {
-                            newMessage.getMessageContentLabel().setText(chatMessages[i][5]);
+                            newMessage.setMessage(chatMessages[i][5]);
                         } else {
                             String senderName;
-                            String[][] userName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + chatMessages[i][1] + "';");
+                            String[][] userName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = ?;", new boolean[]{false}, chatMessages[i][1]);
                             if (userName == null || userName.length == 0) {
                                 senderName = chatMessages[i][1];
-                                DatabaseManager.makeUpdate("insert into unknownUsers values('" + chatMessages[i][1] + "');");
+                                DatabaseManager.makeUpdate("insert into unknownUsers values(?);", new boolean[]{false}, chatMessages[i][1]);
                             } else {
                                 senderName = userName[0][0];
                             }
                             try {
-                                StyledDocument messageLabelDoc = newMessage.getMessageContentLabel().getStyledDocument();
-                                Style senderNameStyle = messageLabelDoc.addStyle("", null);
+//                                StyledDocument messageLabelDoc = newMessage.getMessagePaneStyledDocument();
+//                                Style senderNameStyle = messageLabelDoc.addStyle("", null);
+//                                Color nameColor = currentChatParticipantsColorsMapping.get(chatMessages[i][1]);
+//                                if (nameColor == null) {
+//                                    nameColor = currentChatParticipantsColorsMapping.get("default");
+//                                }
+//                                StyleConstants.setForeground(senderNameStyle, nameColor);
+//                                StyleConstants.setBold(senderNameStyle, true);
+//                                //StyleConstants.setUnderline(senderNameStyle, true);
+//                                messageLabelDoc.insertString(messageLabelDoc.getLength(), senderName, senderNameStyle);
+//                                messageLabelDoc.insertString(messageLabelDoc.getLength(), "\n" + chatMessages[i][5], null);
+//                                newMessage.processSetMessageThroughStyledDocument();
                                 Color nameColor = currentChatParticipantsColorsMapping.get(chatMessages[i][1]);
                                 if (nameColor == null) {
                                     nameColor = currentChatParticipantsColorsMapping.get("default");
                                 }
-                                StyleConstants.setForeground(senderNameStyle, nameColor);
-                                StyleConstants.setBold(senderNameStyle, true);
-                                //StyleConstants.setUnderline(senderNameStyle, true);
-                                messageLabelDoc.insertString(messageLabelDoc.getLength(), senderName, senderNameStyle);
-                                messageLabelDoc.insertString(messageLabelDoc.getLength(), "\n" + chatMessages[i][5], null);
+                                //System.out.println("#"+Integer.toHexString(nameColor.getRGB()).substring(2));
+                                newMessage.setMessage("<font color=\"#" + Integer.toHexString(nameColor.getRGB()).substring(2) +  "\"><b>" + senderName + " </b></font><br>" + chatMessages[i][5]);
                             } catch (Exception e) {
                                 //System.out.println(e);
-                                newMessage.getMessageContentLabel().setText("<html><b><u>" + senderName + "</u></b><br>" + chatMessages[i][5] + "</html>");
+                                newMessage.setMessage("<html><b><u>" + senderName + "</u></b><br>" + chatMessages[i][5] + "</html>");
                             }
                         }
                         newMessage.getMessageTimestampLabel().setText(chatMessages[i][3]);
                         //newMessage.getMessageTimestampLabel().setToolTipText(chatMessages[i][3]);
                         insideChatMessagesContainer.add(newMessage, layoutConstraints);
                         numberOfLoadedMessagesInActiveChat++;
+                        chatMessagesListComponents.add(newMessage);
                     }
                 }
                 //TODO: Add display for messages with different type than text
+                else if(chatMessages[i][4].equals("DOCUMENT"))
+                {
+                    if (chatMessages[i][1].equals(ConfigManager.getAccountID())) {
+                        ChatMessagesListSentDocumentComponent newMessage = new ChatMessagesListSentDocumentComponent(chatMessages[i][0]);
+                        String[][] documentDetails = DatabaseManager.makeQuery("select * from mediaMessagesDetails where chat_id = " + chatID + " and message_id = " + chatMessages[i][0] + ";", null);
+                        String documentSize = "0";
+                        if(documentDetails != null && documentDetails.length > 0)
+                        {
+                            documentSize = documentDetails[0][2];
+                        }
+                        newMessage.setDetails(chatMessages[i][5], documentSize, chatMessages[i][3], chatMessages[i][2]);
+                        //System.out.println(chatMessagesListScrollPanel.getWidth());
+                        insideChatMessagesContainer.add(newMessage, layoutConstraints);
+                        numberOfLoadedMessagesInActiveChat++;
+                        chatMessagesListComponents.add(newMessage);
+                    }
+                    else {
+                        String[][] documentDetails = DatabaseManager.makeQuery("select * from mediaMessagesDetails where chat_id = " + chatID + " and message_id = " + chatMessages[i][0] + ";", null);
+                        String documentSize = "0";
+                        if(documentDetails != null && documentDetails.length > 0)
+                        {
+                            documentSize = documentDetails[0][2];
+                        }
+                        //System.out.println(chatMessagesListScrollPanel.getWidth());
+                        if (chatType.equals("PERSONAL")) {
+                            ChatMessagesListReceivedDocumentComponent newMessage = new ChatMessagesListReceivedDocumentComponent(chatMessages[i][0]);
+                            newMessage.setDetails(chatMessages[i][5], documentSize, chatMessages[i][3]);
+                            insideChatMessagesContainer.add(newMessage, layoutConstraints);
+                            numberOfLoadedMessagesInActiveChat++;
+                            chatMessagesListComponents.add(newMessage);
+                        }
+                        else {
+                            ChatMessagesListGroupReceivedDocumentComponent newMessage = new ChatMessagesListGroupReceivedDocumentComponent(chatMessages[i][0]);
+                            newMessage.setDetails(chatMessages[i][5], documentSize, chatMessages[i][3]);
+                            String senderName;
+                            String[][] userName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = ?;", new boolean[]{false}, chatMessages[i][1]);
+                            if (userName == null || userName.length == 0) {
+                                senderName = chatMessages[i][1];
+                                DatabaseManager.makeUpdate("insert into unknownUsers values(?);", new boolean[]{false}, chatMessages[i][1]);
+                            } else {
+                                senderName = userName[0][0];
+                            }
+                            try {
+                                Color nameColor = currentChatParticipantsColorsMapping.get(chatMessages[i][1]);
+                                if (nameColor == null) {
+                                    nameColor = currentChatParticipantsColorsMapping.get("default");
+                                }
+                                newMessage.setSenderName("<html><font color=\"#" + Integer.toHexString(nameColor.getRGB()).substring(2) +  "\"><b>" + senderName + " </b></font><br></html>");
+                            } catch (Exception e) {
+                                newMessage.setSenderName("<html><b><u>" + senderName + "</u></b></html>");
+                            }
+                            insideChatMessagesContainer.add(newMessage, layoutConstraints);
+                            numberOfLoadedMessagesInActiveChat++;
+                            chatMessagesListComponents.add(newMessage);
+                        }
+                    }
+                }
 
 
                 if (!chatMessages[i][1].equals(ConfigManager.getAccountID()) && Integer.parseInt(chatMessages[i][2]) == 2) {
-                    DatabaseManager.makeUpdate("update chat" + chatID + " set sent_to_server = 3 where message_id = " + chatMessages[i][0] + ";");
+                    DatabaseManager.makeUpdate("update chat" + chatID + " set sent_to_server = 3 where message_id = " + chatMessages[i][0] + ";", null);
                     readReceiptsToBeSent.add(new String[]{chatID, chatMessages[i][0]});
-                    DatabaseManager.makeUpdate("insert into unsentReadReceipts values(" + chatID + ", " + chatMessages[i][0] + ");");
+                    DatabaseManager.makeUpdate("insert into unsentReadReceipts values(" + chatID + ", " + chatMessages[i][0] + ");", null);
                 }
             }
         }
@@ -1933,9 +1919,11 @@ public class ChatMainPanel extends javax.swing.JPanel {
         if (chatType.equals("GROUP")) {
             chatHeaderMoreOptionsButton.setEnabled(true);
             chatSendMessageField.setEnabled(true);
+            //chatSendOtherTypeMessagesButton.setEnabled(true);
         } else if (chatType.equals("GROUP_LF")) {
             chatHeaderMoreOptionsButton.setEnabled(false);
             chatSendMessageField.setEnabled(false);
+            //chatSendOtherTypeMessagesButton.setEnabled(false);
         }
         chatHeaderPanel.setVisible(true);
         chatSendMessagePanel.setVisible(true);
@@ -1946,7 +1934,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
 
         //System.out.println("Loaded messages: " + numberOfLoadedMessagesInActiveChat);
 
-        String[][] updatedUnreadMessagesCount = DatabaseManager.makeQuery("select count(*) from chat" + activeChatComponentReference.getChatID() + " where sent_to_server = 2 and not from_account_id = '" + ConfigManager.getAccountID() + "';");
+        String[][] updatedUnreadMessagesCount = DatabaseManager.makeQuery("select count(*) from chat" + activeChatComponentReference.getChatID() + " where sent_to_server = 2 and not from_account_id = ?;", new boolean[]{false}, ConfigManager.getAccountID());
         if (updatedUnreadMessagesCount != null && Integer.parseInt(updatedUnreadMessagesCount[0][0]) > 0) {
             activeChatComponentReference.getChatLastMessageLabel().setIcon(new ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("reminder (2).png"))));
             activeChatComponentReference.getChatLastMessageLabel().setText(Integer.parseInt(updatedUnreadMessagesCount[0][0]) + " new message" + (Integer.parseInt(updatedUnreadMessagesCount[0][0]) > 1 ? "s" : ""));
@@ -1954,7 +1942,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
         }
 
         if (updatedUnreadMessagesCount == null || Integer.parseInt(updatedUnreadMessagesCount[0][0]) == 0) {
-            String[][] chatLastMessage = DatabaseManager.makeQuery("select message_content, from_account_id, sent_to_server from chat" + activeChatComponentReference.getChatID() + " where message_timestamp = (select max(message_timestamp) from chat" + activeChatComponentReference.getChatID() + ");");
+            String[][] chatLastMessage = DatabaseManager.makeQuery("select message_content, from_account_id, sent_to_server from chat" + activeChatComponentReference.getChatID() + " where message_timestamp = (select max(message_timestamp) from chat" + activeChatComponentReference.getChatID() + ");", null);
             if (chatLastMessage != null && chatLastMessage.length == 1) {
                 activeChatComponentReference.getChatLastMessageLabel().setIcon(null);
                 //activeChatComponentReference.getChatLastMessageLabel().setText(chatLastMessage[0][0]);
@@ -1967,10 +1955,10 @@ public class ChatMainPanel extends javax.swing.JPanel {
                     } else if (senderID.equals(ConfigManager.getAccountID())) {
                         activeChatComponentReference.getChatLastMessageLabel().setText("You: " + chatLastMessage[0][0]);
                     } else {
-                        String[][] senderName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + senderID + "';");
+                        String[][] senderName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = ?;", new boolean[]{false}, senderID);
                         if (senderName == null || senderName.length == 0) {
                             activeChatComponentReference.getChatLastMessageLabel().setText(senderID + ": " + chatLastMessage[0][0]);
-                            DatabaseManager.makeUpdate("insert into unknownUsers values('" + senderID + "');");
+                            DatabaseManager.makeUpdate("insert into unknownUsers values(?);", new boolean[]{false}, senderID);
                         } else {
                             activeChatComponentReference.getChatLastMessageLabel().setText(senderName[0][0] + ": " + chatLastMessage[0][0]);
                         }
@@ -1993,39 +1981,51 @@ public class ChatMainPanel extends javax.swing.JPanel {
 
 
 
-//        int difference = insideChatMessagesContainer.getSize().height - chatMessagesListScrollPanel.getViewport().getExtentSize().height;
-//        if(difference > 0)
-//        {
-//            chatMessagesListScrollPanel.getViewport().setViewPosition(new Point(0, difference));
-//        }
-//
-//        chatMessagesListScrollPanel.getViewport().addChangeListener(loadOlderMessagesEventListener);
-//
-//        chatSendMessageField.grabFocus();
-//
-//        FlatAnimatedLafChange.stop();
-
-
-
-
+        String finalChatType = chatType;
         SwingUtilities.invokeLater(new Runnable() {
             @Override
             public void run() {
-                int difference = insideChatMessagesContainer.getSize().height - chatMessagesListScrollPanel.getViewport().getExtentSize().height;
-                if(difference > 0)
-                {
-                    chatMessagesListScrollPanel.getViewport().setViewPosition(new Point(0, difference));
-                }
+                chatMessagesListScrollPanel.getVerticalScrollBar().setValue(chatMessagesListScrollPanel.getVerticalScrollBar().getMaximum());
+
+//                int difference = insideChatMessagesContainer.getSize().height - chatMessagesListScrollPanel.getViewport().getExtentSize().height;
+//                if(difference > 0)
+//                {
+//                    chatMessagesListScrollPanel.getViewport().setViewPosition(new Point(0, difference));
+//                }
 
                 chatMessagesListScrollPanel.getViewport().addChangeListener(loadOlderMessagesEventListener);
 
-                chatSendMessageField.grabFocus();
+                if(!finalChatType.equals("GROUP_LF"))
+                    chatSendMessageField.grabFocus();
 
                 FlatAnimatedLafChange.stop();
+
+
 
                 //System.out.println(chatMessagesListScrollPanel.getViewport().getChangeListeners().length);
             }
         });
+//        SwingWorker<Void, Void> updateFinisher = new SwingWorker<Void, Void>() {
+//            @Override
+//            protected Void doInBackground() throws Exception {
+//                int difference = insideChatMessagesContainer.getSize().height - chatMessagesListScrollPanel.getViewport().getExtentSize().height;
+//                if(difference > 0)
+//                {
+//                    chatMessagesListScrollPanel.getViewport().setViewPosition(new Point(0, difference));
+//                }
+//
+//                chatMessagesListScrollPanel.getViewport().addChangeListener(loadOlderMessagesEventListener);
+//
+//                if(!finalChatType.equals("GROUP_LF"))
+//                    chatSendMessageField.grabFocus();
+//
+//                FlatAnimatedLafChange.stop();
+//
+//                return null;
+//            }
+//        };
+//        updateFinisher.execute();
+//        while(!updateFinisher.isDone());
 //        chatMessagesListScrollPanel.revalidate();
 //
 //        AdjustmentListener downScroller = new AdjustmentListener() {
@@ -2046,8 +2046,12 @@ public class ChatMainPanel extends javax.swing.JPanel {
     //TODO: Implement updating of chat panel from DB, update chat list and message list
     synchronized public void updateFromDB(int ... extraParameters)
     {
+//        while(guiUpdateInProgress);
+//        guiUpdateInProgress = true;
+
         chatMessagesListScrollPanel.getViewport().removeChangeListener(loadOlderMessagesEventListener);
 
+        //System.out.println(FlatAnimatedLafChange.duration + " " + FlatAnimatedLafChange.resolution);
         FlatAnimatedLafChange.showSnapshot();
 
         boolean keepChatListScrollPosition = false;
@@ -2072,7 +2076,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
             chatListComponents.remove(i);
         }
 
-        String[][] chatList = DatabaseManager.makeQuery("select chat_id, chat_type, chat_name, chat_participants from chat order by last_message_timestamp desc;");
+        String[][] chatList = DatabaseManager.makeQuery("select chat_id, chat_type, chat_name, chat_participants from chat order by last_message_timestamp desc;", null);
         if(chatList != null && chatList.length > 0)
         {
             for(int i = 0; i < chatList.length; i++)
@@ -2080,7 +2084,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
                 ChatListComponentPanel chatListComponent = new ChatListComponentPanel(chatList[i][0], getSelfReference());
                 chatListComponent.getChatNameLabel().setText(chatList[i][2]);
                 chatListComponent.getChatNameLabel().setToolTipText(chatList[i][2]);
-                String[][] chatInfo = DatabaseManager.makeQuery("select message_timestamp, message_content, from_account_id, sent_to_server from chat" + chatList[i][0] + " where message_timestamp = (select max(message_timestamp) from chat" + chatList[i][0] + ");");
+                String[][] chatInfo = DatabaseManager.makeQuery("select message_timestamp, message_content, from_account_id, sent_to_server from chat" + chatList[i][0] + " where message_timestamp = (select max(message_timestamp) from chat" + chatList[i][0] + ");", null);
                 if(chatInfo != null && chatInfo.length == 1)
                 {
                     //TODO: verify later how timestamp is stored and displayed and add required code to display them properly instead of the entire thing, most likely use Date.getTime()
@@ -2114,11 +2118,11 @@ public class ChatMainPanel extends javax.swing.JPanel {
                         }
                         else
                         {
-                            String[][] senderName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + senderID + "';");
+                            String[][] senderName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = ?;", new boolean[]{false}, senderID);
                             if(senderName == null || senderName.length == 0)
                             {
                                 chatListComponent.getChatLastMessageLabel().setText(senderID + ": " + chatInfo[0][1]);
-                                DatabaseManager.makeUpdate("insert into unknownUsers values('" + senderID + "');");
+                                DatabaseManager.makeUpdate("insert into unknownUsers values(?);", new boolean[]{false}, senderID);
                             }
                             else
                             {
@@ -2153,7 +2157,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
                     {
                         chatParticipantsCompareQueryString = chatParticipantsCompareQueryString + " or from_account_id = '" + participants[j] + "'";
                     }
-                    String[][] unreadMessagesCount = DatabaseManager.makeQuery("select count(*) from chat" + chatList[i][0] + " where sent_to_server = 2 and (from_account_id = '0000000000000000'" + chatParticipantsCompareQueryString + ");");
+                    String[][] unreadMessagesCount = DatabaseManager.makeQuery("select count(*) from chat" + chatList[i][0] + " where sent_to_server = 2 and (from_account_id = '0000000000000000'" + chatParticipantsCompareQueryString + ");", null);
                     if(unreadMessagesCount != null && Integer.parseInt(unreadMessagesCount[0][0]) > 0)
                     {
                         chatListComponent.getChatLastMessageLabel().setIcon(new ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("reminder (2).png"))));
@@ -2210,7 +2214,11 @@ public class ChatMainPanel extends javax.swing.JPanel {
 //            });
         }
 
-        FlatAnimatedLafChange.stop();
+//        if(activeChatID == null)
+//            guiUpdateInProgress = false;
+
+        if(activeChatID == null)
+            FlatAnimatedLafChange.stop();
 
         if(activeChatID != null)
         {
@@ -2245,10 +2253,11 @@ public class ChatMainPanel extends javax.swing.JPanel {
             }
 
             numberOfLoadedMessagesInActiveChat = 0;
+            chatMessagesListComponents.clear();
             activeChatComponentReference.highlightPanel();
             activeChatComponentReference.setActiveStatus(true);
 
-            FlatAnimatedLafChange.showSnapshot();
+            //FlatAnimatedLafChange.showSnapshot();
 
             chatHeaderNameLabel.setText(activeChatComponentReference.getChatNameLabel().getText());
             chatHeaderNameLabel.setToolTipText(chatHeaderNameLabel.getText());
@@ -2256,7 +2265,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
             chatMessagesListScrollPanel.getViewport().setView(null);
 
             String chatType = "";
-            String[][] chatInfo = DatabaseManager.makeQuery("select * from chat where chat_id = " + activeChatComponentReference.getChatID() + ";");
+            String[][] chatInfo = DatabaseManager.makeQuery("select * from chat where chat_id = " + activeChatComponentReference.getChatID() + ";", null);
             if(chatInfo != null && chatInfo.length > 0)
             {
                 chatType = chatInfo[0][3];
@@ -2279,26 +2288,28 @@ public class ChatMainPanel extends javax.swing.JPanel {
             layoutConstraints.gridwidth = GridBagConstraints.REMAINDER;
             layoutConstraints.weightx = 1.0;
             //layoutConstraints.anchor = GridBagConstraints.FIRST_LINE_START;
-            String[][] chatMessages = DatabaseManager.makeQuery("select * from chat" + activeChatComponentReference.getChatID() + " order by message_timestamp desc;");
+            String[][] chatMessages = DatabaseManager.makeQuery("select * from chat" + activeChatComponentReference.getChatID() + " order by message_timestamp desc;", null);
             //System.out.println(chatMessages.length);
             if(chatMessages != null)
             {
                 numberOfLoadedMessagesInActiveChat = 0;
+                chatMessagesListComponents.clear();
                 for (int i = (int)(chatMessages.length > Integer.parseInt(ConfigManager.getInitialNumberOfMessagesToLoad())? (previousMessagesAlreadyLoadedInChat? (totalNumberOfMessagesToLoad - 1) : (Integer.parseInt(ConfigManager.getInitialNumberOfMessagesToLoad()) - 1)) : (chatMessages.length - 1)); i >= 0; i--) {
                     if (chatMessages[i][4].equals("TEXT"))
                     {
                         if(chatMessages[i][1].equals("0000000000000000"))
                         {
                             ChatMessagesListInfoTextComponent newMessage = new ChatMessagesListInfoTextComponent(chatMessages[i][0]);
-                            newMessage.getInfoTextLabel().setText(chatMessages[i][5]);
-                            newMessage.getInfoTextLabel().setToolTipText(chatMessages[i][5]);
+                            newMessage.setMessage(chatMessages[i][5]);
+                            //newMessage.getInfoTextLabel().setToolTipText(chatMessages[i][5]);
                             insideChatMessagesContainer.add(newMessage, layoutConstraints);
                             numberOfLoadedMessagesInActiveChat++;
+                            chatMessagesListComponents.add(newMessage);
                         }
                         else if(chatMessages[i][1].equals(ConfigManager.getAccountID()))
                         {
                             ChatMessagesListSentTextComponent newMessage = new ChatMessagesListSentTextComponent(chatMessages[i][0]);
-                            newMessage.getMessageContentLabel().setText(chatMessages[i][5]);
+                            newMessage.setMessage(chatMessages[i][5]);
                             newMessage.getMessageTimestampLabel().setText(chatMessages[i][3]);
                             //newMessage.getMessageTimestampLabel().setToolTipText(chatMessages[i][3]);
                             if(Integer.parseInt(chatMessages[i][2]) == 3)
@@ -2319,58 +2330,123 @@ public class ChatMainPanel extends javax.swing.JPanel {
                             }
                             insideChatMessagesContainer.add(newMessage, layoutConstraints);
                             numberOfLoadedMessagesInActiveChat++;
+                            chatMessagesListComponents.add(newMessage);
                         }
                         //else if((DatabaseManager.makeQuery("select chat_participants from chat where chat_id = " + activeChatComponentReference.getChatID() + ";"))[0][0].contains(chatMessages[i][1]))
                         else {
                             ChatMessagesListReceivedTextComponent newMessage = new ChatMessagesListReceivedTextComponent(chatMessages[i][0]);
                             if(chatType.equals("PERSONAL")) {
-                                newMessage.getMessageContentLabel().setText(chatMessages[i][5]);
+                                newMessage.setMessage(chatMessages[i][5]);
                             }
                             else {
                                 String senderName;
-                                String[][] userName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + chatMessages[i][1] + "';");
+                                String[][] userName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = ?;", new boolean[]{false}, chatMessages[i][1]);
                                 if(userName == null || userName.length == 0)
                                 {
                                     senderName = chatMessages[i][1];
-                                    DatabaseManager.makeUpdate("insert into unknownUsers values('" + chatMessages[i][1] + "');");
+                                    DatabaseManager.makeUpdate("insert into unknownUsers values(?);", new boolean[]{false}, chatMessages[i][1]);
                                 }
                                 else
                                 {
                                     senderName = userName[0][0];
                                 }
                                 try {
-                                    StyledDocument messageLabelDoc = newMessage.getMessageContentLabel().getStyledDocument();
-                                    Style senderNameStyle = messageLabelDoc.addStyle("", null);
+//                                    StyledDocument messageLabelDoc = newMessage.getMessagePaneStyledDocument();
+//                                    Style senderNameStyle = messageLabelDoc.addStyle("", null);
+//                                    Color nameColor = currentChatParticipantsColorsMapping.get(chatMessages[i][1]);
+//                                    if(nameColor == null)
+//                                    {
+//                                        nameColor = currentChatParticipantsColorsMapping.get("default");
+//                                    }
+//                                    StyleConstants.setForeground(senderNameStyle, nameColor);
+//                                    StyleConstants.setBold(senderNameStyle, true);
+//                                    //StyleConstants.setUnderline(senderNameStyle, true);
+//                                    messageLabelDoc.insertString(messageLabelDoc.getLength(), senderName, senderNameStyle);
+//                                    messageLabelDoc.insertString(messageLabelDoc.getLength(), "\n" + chatMessages[i][5], null);
+//                                    newMessage.processSetMessageThroughStyledDocument();
                                     Color nameColor = currentChatParticipantsColorsMapping.get(chatMessages[i][1]);
-                                    if(nameColor == null)
-                                    {
+                                    if (nameColor == null) {
                                         nameColor = currentChatParticipantsColorsMapping.get("default");
                                     }
-                                    StyleConstants.setForeground(senderNameStyle, nameColor);
-                                    StyleConstants.setBold(senderNameStyle, true);
-                                    //StyleConstants.setUnderline(senderNameStyle, true);
-                                    messageLabelDoc.insertString(messageLabelDoc.getLength(), senderName, senderNameStyle);
-                                    messageLabelDoc.insertString(messageLabelDoc.getLength(), "\n" + chatMessages[i][5], null);
+                                    //System.out.println("#"+Integer.toHexString(nameColor.getRGB()).substring(2));
+                                    newMessage.setMessage("<font color=\"#" + Integer.toHexString(nameColor.getRGB()).substring(2) +  "\"><b>" + senderName + " </b></font><br>" + chatMessages[i][5]);
                                 }
                                 catch (Exception e) {
                                     //System.out.println(e);
-                                    newMessage.getMessageContentLabel().setText("<html><b><u>" + senderName + "</u></b><br>" + chatMessages[i][5] + "</html>");
+                                    newMessage.setMessage("<html><b><u>" + senderName + "</u></b><br>" + chatMessages[i][5] + "</html>");
                                 }
                             }
                             newMessage.getMessageTimestampLabel().setText(chatMessages[i][3]);
                             //newMessage.getMessageTimestampLabel().setToolTipText(chatMessages[i][3]);
                             insideChatMessagesContainer.add(newMessage, layoutConstraints);
                             numberOfLoadedMessagesInActiveChat++;
+                            chatMessagesListComponents.add(newMessage);
                         }
                     }
                     //TODO: Add display for messages with different type than text
+                    else if(chatMessages[i][4].equals("DOCUMENT"))
+                    {
+                        if (chatMessages[i][1].equals(ConfigManager.getAccountID())) {
+                            ChatMessagesListSentDocumentComponent newMessage = new ChatMessagesListSentDocumentComponent(chatMessages[i][0]);
+                            String[][] documentDetails = DatabaseManager.makeQuery("select * from mediaMessagesDetails where chat_id = " + activeChatComponentReference.getChatID() + " and message_id = " + chatMessages[i][0] + ";", null);
+                            String documentSize = "0";
+                            if(documentDetails != null && documentDetails.length > 0)
+                            {
+                                documentSize = documentDetails[0][2];
+                            }
+                            newMessage.setDetails(chatMessages[i][5], documentSize, chatMessages[i][3], chatMessages[i][2]);
+                            insideChatMessagesContainer.add(newMessage, layoutConstraints);
+                            numberOfLoadedMessagesInActiveChat++;
+                            chatMessagesListComponents.add(newMessage);
+                        }
+                        else {
+                            String[][] documentDetails = DatabaseManager.makeQuery("select * from mediaMessagesDetails where chat_id = " + activeChatComponentReference.getChatID() + " and message_id = " + chatMessages[i][0] + ";", null);
+                            String documentSize = "0";
+                            if(documentDetails != null && documentDetails.length > 0)
+                            {
+                                documentSize = documentDetails[0][2];
+                            }
+                            if (chatType.equals("PERSONAL")) {
+                                ChatMessagesListReceivedDocumentComponent newMessage = new ChatMessagesListReceivedDocumentComponent(chatMessages[i][0]);
+                                newMessage.setDetails(chatMessages[i][5], documentSize, chatMessages[i][3]);
+                                insideChatMessagesContainer.add(newMessage, layoutConstraints);
+                                numberOfLoadedMessagesInActiveChat++;
+                                chatMessagesListComponents.add(newMessage);
+                            }
+                            else {
+                                ChatMessagesListGroupReceivedDocumentComponent newMessage = new ChatMessagesListGroupReceivedDocumentComponent(chatMessages[i][0]);
+                                newMessage.setDetails(chatMessages[i][5], documentSize, chatMessages[i][3]);
+                                String senderName;
+                                String[][] userName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = ?;", new boolean[]{false}, chatMessages[i][1]);
+                                if (userName == null || userName.length == 0) {
+                                    senderName = chatMessages[i][1];
+                                    DatabaseManager.makeUpdate("insert into unknownUsers values(?);", new boolean[]{false}, chatMessages[i][1]);
+                                } else {
+                                    senderName = userName[0][0];
+                                }
+                                try {
+                                    Color nameColor = currentChatParticipantsColorsMapping.get(chatMessages[i][1]);
+                                    if (nameColor == null) {
+                                        nameColor = currentChatParticipantsColorsMapping.get("default");
+                                    }
+                                    newMessage.setSenderName("<html><font color=\"#" + Integer.toHexString(nameColor.getRGB()).substring(2) +  "\"><b>" + senderName + " </b></font><br></html>");
+                                } catch (Exception e) {
+                                    newMessage.setSenderName("<html><b><u>" + senderName + "</u></b></html>");
+                                }
+                                insideChatMessagesContainer.add(newMessage, layoutConstraints);
+                                numberOfLoadedMessagesInActiveChat++;
+                                chatMessagesListComponents.add(newMessage);
+                            }
+                        }
+                    }
+
 
 
                     if (!chatMessages[i][1].equals(ConfigManager.getAccountID()) && Integer.parseInt(chatMessages[i][2]) == 2)
                     {
-                        DatabaseManager.makeUpdate("update chat" + activeChatComponentReference.getChatID() + " set sent_to_server = 3 where message_id = " + chatMessages[i][0] + ";");
+                        DatabaseManager.makeUpdate("update chat" + activeChatComponentReference.getChatID() + " set sent_to_server = 3 where message_id = " + chatMessages[i][0] + ";", null);
                         readReceiptsToBeSent.add(new String[]{activeChatComponentReference.getChatID(), chatMessages[i][0]});
-                        DatabaseManager.makeUpdate("insert into unsentReadReceipts values(" + activeChatComponentReference.getChatID() + ", " + chatMessages[i][0] + ");");
+                        DatabaseManager.makeUpdate("insert into unsentReadReceipts values(" + activeChatComponentReference.getChatID() + ", " + chatMessages[i][0] + ");", null);
                     }
                 }
             }
@@ -2380,11 +2456,13 @@ public class ChatMainPanel extends javax.swing.JPanel {
             {
                 chatHeaderMoreOptionsButton.setEnabled(true);
                 chatSendMessageField.setEnabled(true);
+                //chatSendOtherTypeMessagesButton.setEnabled(true);
             }
             else if(chatType.equals("GROUP_LF"))
             {
                 chatHeaderMoreOptionsButton.setEnabled(false);
                 chatSendMessageField.setEnabled(false);
+                //chatSendOtherTypeMessagesButton.setEnabled(false);
             }
 
             if(chatType.contains("GROUP"))
@@ -2395,10 +2473,10 @@ public class ChatMainPanel extends javax.swing.JPanel {
                 {
                     if(chatParticipantsID[i].isEmpty())
                         continue;
-                    String[][] participantName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + chatParticipantsID[i] + "';");
+                    String[][] participantName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = ?;", new boolean[]{false}, chatParticipantsID[i]);
                     if(participantName == null || participantName.length == 0)
                     {
-                        DatabaseManager.makeUpdate("insert into unknownUsers values('" + chatParticipantsID[i] + "');");
+                        DatabaseManager.makeUpdate("insert into unknownUsers values(?);", new boolean[]{false}, chatParticipantsID[i]);
                         continue;
                     }
                     participantList = participantList + participantName[0][0] + ", ";
@@ -2408,7 +2486,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
                 {
                     participantList = participantList.substring(0, indexOfExtraCommaSpace);
                 }
-                chatHeaderParticipantOrOnlineLabel.setText(participantList);
+                chatHeaderParticipantOrOnlineLabel.setText("<html>" + participantList + "</html>");
                 chatHeaderParticipantOrOnlineLabel.setToolTipText(participantList);
             }
 
@@ -2418,7 +2496,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
             revalidate();
 
             //System.out.println("Loaded messages: " + numberOfLoadedMessagesInActiveChat);
-            String[][] updatedUnreadMessagesCount = DatabaseManager.makeQuery("select count(*) from chat" + activeChatComponentReference.getChatID() + " where sent_to_server = 2 and not from_account_id = '" + ConfigManager.getAccountID() + "';");
+            String[][] updatedUnreadMessagesCount = DatabaseManager.makeQuery("select count(*) from chat" + activeChatComponentReference.getChatID() + " where sent_to_server = 2 and not from_account_id = ?;", new boolean[]{false}, ConfigManager.getAccountID());
             if(updatedUnreadMessagesCount != null && Integer.parseInt(updatedUnreadMessagesCount[0][0]) > 0)
             {
                 activeChatComponentReference.getChatLastMessageLabel().setIcon(new ImageIcon(Objects.requireNonNull(ChatMainPanel.class.getClassLoader().getResource("reminder (2).png"))));
@@ -2427,7 +2505,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
             }
 
             if(updatedUnreadMessagesCount == null || Integer.parseInt(updatedUnreadMessagesCount[0][0]) == 0) {
-                String[][] chatLastMessage = DatabaseManager.makeQuery("select message_content, from_account_id, sent_to_server from chat" + activeChatComponentReference.getChatID() + " where message_timestamp = (select max(message_timestamp) from chat" + activeChatComponentReference.getChatID() + ");");
+                String[][] chatLastMessage = DatabaseManager.makeQuery("select message_content, from_account_id, sent_to_server from chat" + activeChatComponentReference.getChatID() + " where message_timestamp = (select max(message_timestamp) from chat" + activeChatComponentReference.getChatID() + ");", null);
                 if (chatLastMessage != null && chatLastMessage.length == 1) {
                     activeChatComponentReference.getChatLastMessageLabel().setIcon(null);
                     //activeChatComponentReference.getChatLastMessageLabel().setText(chatLastMessage[0][0]);
@@ -2447,11 +2525,11 @@ public class ChatMainPanel extends javax.swing.JPanel {
                         }
                         else
                         {
-                            String[][] senderName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = '" + senderID + "';");
+                            String[][] senderName = DatabaseManager.makeQuery("select display_name from savedUsers where account_id = ?;", new boolean[]{false}, senderID);
                             if(senderName == null || senderName.length == 0)
                             {
                                 activeChatComponentReference.getChatLastMessageLabel().setText(senderID + ": " + chatLastMessage[0][0]);
-                                DatabaseManager.makeUpdate("insert into unknownUsers values('" + senderID + "');");
+                                DatabaseManager.makeUpdate("insert into unknownUsers values(?);", new boolean[]{false}, senderID);
                             }
                             else
                             {
@@ -2477,11 +2555,13 @@ public class ChatMainPanel extends javax.swing.JPanel {
             SwingUtilities.invokeLater(new Runnable() {
                 @Override
                 public void run() {
-                    int difference = insideChatMessagesContainer.getSize().height - chatMessagesListScrollPanel.getViewport().getExtentSize().height;
-                    if(difference > 0)
-                    {
-                        chatMessagesListScrollPanel.getViewport().setViewPosition(new Point(0, difference));
-                    }
+                    chatMessagesListScrollPanel.getVerticalScrollBar().setValue(chatMessagesListScrollPanel.getVerticalScrollBar().getMaximum());
+
+//                    int difference = insideChatMessagesContainer.getSize().height - chatMessagesListScrollPanel.getViewport().getExtentSize().height;
+//                    if(difference > 0)
+//                    {
+//                        chatMessagesListScrollPanel.getViewport().setViewPosition(new Point(0, difference));
+//                    }
 
                     if(extraParameters.length > 0 && Arrays.toString(extraParameters).contains(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_LOADING_OLD_MESSAGES + ""))
                     {
@@ -2496,8 +2576,38 @@ public class ChatMainPanel extends javax.swing.JPanel {
                     chatMessagesListScrollPanel.getViewport().addChangeListener(loadOlderMessagesEventListener);
 
                     FlatAnimatedLafChange.stop();
+
+                    //guiUpdateInProgress = false;
                 }
             });
+//            SwingWorker<Void, Void> updateFinisher = new SwingWorker<Void, Void>() {
+//                @Override
+//                protected Void doInBackground() throws Exception {
+//                    int difference = insideChatMessagesContainer.getSize().height - chatMessagesListScrollPanel.getViewport().getExtentSize().height;
+//                    if(difference > 0)
+//                    {
+//                        chatMessagesListScrollPanel.getViewport().setViewPosition(new Point(0, difference));
+//                    }
+//
+//                    if(extraParameters.length > 0 && Arrays.toString(extraParameters).contains(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_LOADING_OLD_MESSAGES + ""))
+//                    {
+//                        chatMessagesListScrollPanel.getVerticalScrollBar().setValue(chatMessagesListScrollPanel.getVerticalScrollBar().getMaximum() - messageListCurrentScrollBarPositionFromBottom);
+//                    }
+//                    else if(extraParameters.length > 0 && Arrays.toString(extraParameters).contains(KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON + ""))
+//                    {
+//                        if(!forceScrollDownMessageList)
+//                            chatMessagesListScrollPanel.getVerticalScrollBar().setValue(messageListCurrentScrollBarPositionFromTop);
+//                    }
+//
+//                    chatMessagesListScrollPanel.getViewport().addChangeListener(loadOlderMessagesEventListener);
+//
+//                    FlatAnimatedLafChange.stop();
+//
+//                    return null;
+//                }
+//            };
+//            updateFinisher.execute();
+//            while(!updateFinisher.isDone());
         }
     }
 
@@ -2520,7 +2630,7 @@ public class ChatMainPanel extends javax.swing.JPanel {
     private javax.swing.JPanel chatMessagesPanel;
     private javax.swing.JButton chatSendMessageButton;
     private javax.swing.JTextField chatSendMessageField;
-    private javax.swing.JToggleButton chatSendMessageOtherTypesToggleButton;
+    private javax.swing.JButton chatSendOtherTypeMessagesButton;
     private javax.swing.JPanel chatSendMessagePanel;
     private javax.swing.JToggleButton deleteChatButton;
     private javax.swing.JButton newChatButton;

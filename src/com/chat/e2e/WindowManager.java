@@ -66,8 +66,16 @@ public class WindowManager
                         return null;
                     if(!success)
                     {
-                        JOptionPane.showMessageDialog(Main.getMainFrame(), "You have been force logged out due to invalid session ID.\nYou will be moved back to the main menu.\nPlease try logging in again.",
-                                "User logged out", JOptionPane.ERROR_MESSAGE);
+                        DatabaseManager.closeDB();
+                        SwingWorker<Void, Void> forceLogoutDialogShowWorker = new SwingWorker<Void, Void>() {
+                            @Override
+                            protected Void doInBackground() throws Exception {
+                                JOptionPane.showMessageDialog(Main.getMainFrame(), "You have been force logged out due to invalid session ID.\nYou will be moved back to the main menu.\nPlease try logging in again.",
+                                        "User logged out", JOptionPane.ERROR_MESSAGE);
+                                return null;
+                            }
+                        };
+                        forceLogoutDialogShowWorker.execute();
                         changeFromChatToSelection(true);
                     }
                     return null;
@@ -85,6 +93,7 @@ public class WindowManager
         currentPanel = "UserRegisterPanel";
         registerPanelReference = new UserRegisterPanel();
         mainFrame.addToMainPanel(registerPanelReference, false);
+        registerPanelReference.makeUsernameFieldGrabFocus();
     }
 
     synchronized public static void changeFromSelectionToLogin()
@@ -95,6 +104,7 @@ public class WindowManager
         currentPanel = "UserLoginPanel";
         loginPanelReference = new UserLoginPanel();
         mainFrame.addToMainPanel(loginPanelReference, false);
+        loginPanelReference.makeUsernameFieldGrabFocus();
     }
 
     synchronized public static void changeFromRegisterToSelection()
@@ -138,23 +148,12 @@ public class WindowManager
         DatabaseManager.initializeDB();
 
         mainFrame.getAppWindowPanel().removeAll();
-        chatPanelReference.getOtherThreadsCrashHandler().cancel();
-        chatPanelReference.getNetworkStatusUpdaterThread().cancel(true);
-        if(!chatPanelReference.getNetworkStatusUpdaterThread().isDone())
-            chatPanelReference.getNetworkStatusUpdaterThread().cancel(true);
-        chatPanelReference.getReloginThread().cancel(true);
-        if(!chatPanelReference.getReloginThread().isDone())
-            chatPanelReference.getReloginThread().cancel(true);
-        chatPanelReference.getNewChatAndMessageReceiverThread().cancel(true);
-        if(!chatPanelReference.getNewChatAndMessageReceiverThread().isDone())
-            chatPanelReference.getNewChatAndMessageReceiverThread().cancel(true);
+        chatPanelReference.getNetworkStatusUpdater().cancel();
+        chatPanelReference.getReloginTimer().cancel();
+        chatPanelReference.getNewChatAndMessageReceiver().cancel();
         chatPanelReference.getPeriodicPanelUpdatorTimer().cancel();
-        chatPanelReference.getNewMessageSenderThread().cancel(true);
-        if(!chatPanelReference.getNewMessageSenderThread().isDone())
-            chatPanelReference.getNewMessageSenderThread().cancel(true);
-        chatPanelReference.getMessageReadReceiptsUpdatorThread().cancel(true);
-        if(!chatPanelReference.getMessageReadReceiptsUpdatorThread().isDone())
-            chatPanelReference.getMessageReadReceiptsUpdatorThread().cancel(true);
+        chatPanelReference.getNewMessageSender().cancel();
+        chatPanelReference.getMessageReadReceiptsUpdator().cancel();
         chatPanelReference.getUnknownInfoFinderTimer().cancel();
         chatPanelReference = null;
 
@@ -193,17 +192,18 @@ public class WindowManager
             chatPanelReference.hideMessagesPanel();
 
             Main.getMainFrame().setVisible(false);
-            chatPanelReference.getOtherThreadsCrashHandler().cancel();
-            chatPanelReference.getNetworkStatusUpdaterThread().cancel(true);
-            chatPanelReference.getReloginThread().cancel(true);
-            chatPanelReference.getNewChatAndMessageReceiverThread().cancel(true);
-            chatPanelReference.getNewMessageSenderThread().cancel(true);
-            chatPanelReference.getMessageReadReceiptsUpdatorThread().cancel(true);
+            chatPanelReference.getNetworkStatusUpdater().cancel();
+            chatPanelReference.getReloginTimer().cancel();
+            chatPanelReference.getNewChatAndMessageReceiver().cancel();
+            chatPanelReference.getNewMessageSender().cancel();
+            chatPanelReference.getMessageReadReceiptsUpdator().cancel();
             chatPanelReference.getPeriodicPanelUpdatorTimer().cancel();
             NetworkManager.disconnectFromServer(true);
             DatabaseManager.closeDB();
             Main.getMainFrame().dispose();
         }
+        Main.getMainFrame().chatPanelUpdateTimer.cancel();
+        DatabaseManager.getDbUpdateTimer().cancel();
 
         //Force exit if safe exit doesn't work above
         try

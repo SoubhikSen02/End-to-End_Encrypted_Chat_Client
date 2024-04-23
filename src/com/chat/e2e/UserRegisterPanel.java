@@ -33,6 +33,8 @@ public class UserRegisterPanel extends javax.swing.JPanel {
 //        registerButton.setIcon(registerButtonIcon);
 //        registerButtonIcon.setImageObserver(registerButton);
 //        registerButton.setEnabled(false);
+
+        //usernameField.grabFocus();
     }
 
     /**
@@ -269,6 +271,7 @@ public class UserRegisterPanel extends javax.swing.JPanel {
                 passwordShowButtonActionPerformed(evt);
             }
         });
+        passwordShowButton.setFocusable(false);
 
         confirmPasswordShowButton.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(UserRegisterPanel.class.getClassLoader().getResource("eye (1).png")))); // NOI18N
         confirmPasswordShowButton.setToolTipText("Show/Hide password");
@@ -277,6 +280,7 @@ public class UserRegisterPanel extends javax.swing.JPanel {
                 confirmPasswordShowButtonActionPerformed(evt);
             }
         });
+        confirmPasswordShowButton.setFocusable(false);
 
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(this);
         this.setLayout(layout);
@@ -694,6 +698,10 @@ public class UserRegisterPanel extends javax.swing.JPanel {
         securityAns3Field.setBackground((new JTextField()).getBackground());
     }
 
+    public void makeUsernameFieldGrabFocus()
+    {
+        usernameField.grabFocus();
+    }
 
     // Variables declaration - do not modify
     private javax.swing.JButton cancelButton;

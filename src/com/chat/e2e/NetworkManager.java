@@ -434,6 +434,7 @@ public class NetworkManager
             return null;
         if(reply.equals("ERROR"))
             return false;
+        DatabaseManager.closeDB();
         reply = reply.substring(6);
         ConfigManager.setAccountID(reply);
         success = sendToServer("OK");
@@ -837,13 +838,16 @@ public class NetworkManager
             }
 
             //TODO: Test how database reacts for inserting into both chat and savedUsers when the chat's ID or the user's ID is already there in the database
-            DatabaseManager.makeUpdate("insert into chat values(" + chatID + ", '" + chatKey + "', '" + chatIV + "', '" + chatType + "', '" + chatName + "', '" + participants + "', 0);");
+            DatabaseManager.makeUpdate("insert into chat values(" + chatID + ", ?, ?, ?, ?, ?, 0);", new boolean[]{false, false, false, false, false}, chatKey, chatIV, chatType, chatName, participants);
+
+            // TODO: CHANGE MESSAGE TABLE SCHEMA HERE AS WELL AS IN DATABASE MANAGER
+            DatabaseManager.makeUpdate("create table chat" + chatID + "(message_id number(64) primary key not null, from_account_id char(16) not null, sent_to_server integer(2) not null, message_timestamp number(64) not null, message_type varchar(16) not null, message_content varchar(1048576) not null);", null);
 
             for(int j = 0; j < participantsList.length; j++)
             {
                 String ID = participantsList[j][0];
                 String name = participantsList[j][1];
-                DatabaseManager.makeUpdate("insert into savedUsers values('" + ID + "', '" + name + "');");
+                DatabaseManager.makeUpdate("insert into savedUsers values(?, ?);", new boolean[]{false, false}, ID, name);
             }
         }
 
@@ -856,7 +860,7 @@ public class NetworkManager
         if(!success)
             return null;
 
-        DatabaseManager.initializeDB();
+        //DatabaseManager.initializeDB();
 
         return true;
     }
@@ -925,6 +929,7 @@ public class NetworkManager
                 return null;
 
             String message = "";
+            String documentSize = "0";
             if(messageType.equals("TEXT"))
             {
                 reply = receiveFromServer();
@@ -941,7 +946,7 @@ public class NetworkManager
                 // thread periodically checks the queue and decrypts any message if found.
                 if(USE_ENCRYPTION && !senderAccountID.equals("0000000000000000"))
                 {
-                    String[][] chatInfo = DatabaseManager.makeQuery("select encryption_key, encryption_IV from chat where chat_id = " + chatID + ";");
+                    String[][] chatInfo = DatabaseManager.makeQuery("select encryption_key, encryption_IV from chat where chat_id = " + chatID + ";", null);
                     if(chatInfo != null && chatInfo.length == 1)
                         message = EncryptionManager.decryptText(message, chatInfo[0][0], chatInfo[0][1]);
                 }
@@ -949,19 +954,52 @@ public class NetworkManager
                 if(!success)
                     return null;
             }
-            else
+            else if(messageType.equals("DOCUMENT"))
             {
                 //TODO: Get file from different functions which does byte transfer
-                message = messageType;
+                reply = receiveFromServer();
+                if(reply == null)
+                    return null;
+                message = reply.substring(8);
+                String originalMessage = new String(message);
+                if(USE_ENCRYPTION && !senderAccountID.equals("0000000000000000"))
+                {
+                    String[][] chatInfo = DatabaseManager.makeQuery("select encryption_key, encryption_IV from chat where chat_id = " + chatID + ";", null);
+                    if(chatInfo != null && chatInfo.length == 1)
+                        message = EncryptionManager.decryptText(message, chatInfo[0][0], chatInfo[0][1]);
+                }
+                if(!message.equals(originalMessage)) {
+                    documentSize = message.substring(message.indexOf('|') + 1);
+                    message = message.substring(0, message.indexOf('|'));
+                }
+                success = sendToServer("OK");
+                if(!success)
+                    return null;
             }
 
             //TODO: Test how database reacts with properly updating the chat last message timestamp
-            if((new BigInteger(DatabaseManager.makeQuery("select last_message_timestamp from chat where chat_id = " + chatID + ";")[0][0])).compareTo(new BigInteger(messageTimestamp)) == -1)
+
+            if(!DatabaseManager.checkIfTableExists("chat" + chatID))
             {
-                DatabaseManager.makeUpdate("update chat set last_message_timestamp = " + messageTimestamp + " where chat_id = " + chatID + ";");
+                DatabaseManager.makeUpdate("insert into uncategorizedChatMessages values(" + chatID + ", " + messageID + ", ?, 2, " + messageTimestamp + ", ?, ?);", new boolean[]{false, false, false}, senderAccountID, messageType, message);
+                if(messageType.equals("DOCUMENT"))
+                {
+                    DatabaseManager.makeUpdate("insert into mediaMessagesDetails values(" + chatID + ", " + messageID + ", ?);", new boolean[]{false}, documentSize);
+                }
+                DatabaseManager.makeUpdate("insert into unknownChats values(" + chatID + ");", null);
+                continue;
             }
 
-            DatabaseManager.makeUpdate("insert into chat" + chatID + " values(" + messageID + ", '" + senderAccountID + "', 2, " + messageTimestamp + ", '" + messageType + "', '" + message + "');");
+            if((new BigInteger(DatabaseManager.makeQuery("select last_message_timestamp from chat where chat_id = " + chatID + ";", null)[0][0])).compareTo(new BigInteger(messageTimestamp)) == -1)
+            {
+                DatabaseManager.makeUpdate("update chat set last_message_timestamp = " + messageTimestamp + " where chat_id = " + chatID + ";", null);
+            }
+
+            DatabaseManager.makeUpdate("insert into chat" + chatID + " values(" + messageID + ", ?, 2, " + messageTimestamp + ", ?, ?);", new boolean[]{false, false, false}, senderAccountID, messageType, message);
+            if(messageType.equals("DOCUMENT"))
+            {
+                DatabaseManager.makeUpdate("insert into mediaMessagesDetails values(" + chatID + ", " + messageID + ", ?);", new boolean[]{false}, documentSize);
+            }
         }
 
         reply = receiveFromServer();
@@ -978,6 +1016,7 @@ public class NetworkManager
 
     synchronized public static Boolean logoutUser()
     {
+        DatabaseManager.closeDB();
         if(!connected || busy)
             return null;
         if(!loggedIn)
@@ -1063,7 +1102,7 @@ public class NetworkManager
         if(messageType.equals("TEXT")) {
             if(USE_ENCRYPTION)
             {
-                String[][] chatInfo = DatabaseManager.makeQuery("select encryption_key, encryption_IV from chat where chat_id = " + chatID + ";");
+                String[][] chatInfo = DatabaseManager.makeQuery("select encryption_key, encryption_IV from chat where chat_id = " + chatID + ";", null);
                 if(chatInfo != null && chatInfo.length == 1)
                     messageContent = EncryptionManager.encryptText(messageContent, chatInfo[0][0], chatInfo[0][1]);
             }
@@ -1076,9 +1115,23 @@ public class NetworkManager
             if (!reply.equals("OK"))
                 return false;
         }
-        else
+        else if(messageType.equals("DOCUMENT"))
         {
             //TODO: Add functionality to send other types of messages
+            if(USE_ENCRYPTION)
+            {
+                String[][] chatInfo = DatabaseManager.makeQuery("select encryption_key, encryption_IV from chat where chat_id = " + chatID + ";", null);
+                if(chatInfo != null && chatInfo.length == 1)
+                    messageContent = EncryptionManager.encryptText(messageContent, chatInfo[0][0], chatInfo[0][1]);
+            }
+            success = sendToServer("CONTENT " + messageContent);
+            if (!success)
+                return null;
+            reply = receiveFromServer();
+            if (reply == null)
+                return null;
+            if (!reply.equals("OK"))
+                return false;
         }
 
         success = sendToServer("DONE");
@@ -1114,11 +1167,12 @@ public class NetworkManager
         if(!success)
             return null;
 
-        DatabaseManager.makeUpdate("update chat" + chatID + " set message_id = " + newMessageID + ", sent_to_server = 1, message_timestamp = " + newMessageTimestamp + " where message_id = " + messageID + ";");
-        if((new BigInteger(DatabaseManager.makeQuery("select last_message_timestamp from chat where chat_id = " + chatID + ";")[0][0])).compareTo(new BigInteger(newMessageTimestamp)) == -1)
+        DatabaseManager.makeUpdate("update chat" + chatID + " set message_id = " + newMessageID + ", sent_to_server = 1, message_timestamp = " + newMessageTimestamp + " where message_id = " + messageID + ";", null);
+        if((new BigInteger(DatabaseManager.makeQuery("select last_message_timestamp from chat where chat_id = " + chatID + ";", null)[0][0])).compareTo(new BigInteger(newMessageTimestamp)) == -1)
         {
-            DatabaseManager.makeUpdate("update chat set last_message_timestamp = " + newMessageTimestamp + " where chat_id = " + chatID + ";");
+            DatabaseManager.makeUpdate("update chat set last_message_timestamp = " + newMessageTimestamp + " where chat_id = " + chatID + ";", null);
         }
+        DatabaseManager.makeUpdate("update mediaMessagesDetails set message_id = " + newMessageID + " where chat_id = " + chatID + " and message_id = " + messageID + ";", null);
 
         return true;
     }
@@ -1193,9 +1247,11 @@ public class NetworkManager
         String encryptionKey = EncryptionManager.generateDeterministicKeyForPersonalChats(ConfigManager.getAccountID(), chatParticipant);
         String encryptionIV = EncryptionManager.generateDeterministicInitializationVectorForPersonalChats(ConfigManager.getAccountID(), chatParticipant);
 
-        DatabaseManager.makeUpdate("insert into chat values(" + chatID + ", '" + encryptionKey + "', '" + encryptionIV + "', '" + chatType + "', '" + chatName + "', '" + chatParticipant + "', 0);");
-        DatabaseManager.makeUpdate("insert into savedUsers values('" + chatParticipant + "', '" + chatName + "');");
-        DatabaseManager.initializeDB();
+        DatabaseManager.makeUpdate("insert into chat values(" + chatID + ", ?, ?, ?, ?, ?, 0);", new boolean[]{false, false, false, false, false}, encryptionKey, encryptionIV, chatType, chatName, chatParticipant);
+        // TODO: CHANGE MESSAGE TABLE SCHEMA HERE AS WELL AS IN DATABASE MANAGER
+        DatabaseManager.makeUpdate("create table chat" + chatID + "(message_id number(64) primary key not null, from_account_id char(16) not null, sent_to_server integer(2) not null, message_timestamp number(64) not null, message_type varchar(16) not null, message_content varchar(1048576) not null);", null);
+        DatabaseManager.makeUpdate("insert into savedUsers values(?, ?);", new boolean[]{false, false}, chatParticipant, chatName);
+        //DatabaseManager.initializeDB();
 
         return true;
     }
@@ -1414,7 +1470,7 @@ public class NetworkManager
             if(!success)
                 return null;
 
-            DatabaseManager.makeUpdate("update chat" + chatID + " set sent_to_server = " + newReadState + " where message_id = " + messageID + ";");
+            DatabaseManager.makeUpdate("update chat" + chatID + " set sent_to_server = " + newReadState + " where message_id = " + messageID + ";", null);
         }
 
         reply = receiveFromServer();
@@ -1578,12 +1634,14 @@ public class NetworkManager
         String encryptionKey = EncryptionManager.generateDeterministicKeyForGroupChats(chatName, chatID);
         String encryptionIV = EncryptionManager.generateDeterministicInitializationVectorForGroupChats(chatName, chatID);
 
-        DatabaseManager.makeUpdate("insert into chat values(" + chatID + ", '" + encryptionKey + "', '" + encryptionIV + "', '" + chatType + "', '" + chatName + "', '" + chatParticipantsList + "', 0);");
+        DatabaseManager.makeUpdate("insert into chat values(" + chatID + ", ?, ?, ?, ?, ?, 0);", new boolean[]{false, false, false, false, false}, encryptionKey, encryptionIV, chatType, chatName, chatParticipantsList);
+        // TODO: CHANGE MESSAGE TABLE SCHEMA HERE AS WELL AS IN DATABASE MANAGER
+        DatabaseManager.makeUpdate("create table chat" + chatID + "(message_id number(64) primary key not null, from_account_id char(16) not null, sent_to_server integer(2) not null, message_timestamp number(64) not null, message_type varchar(16) not null, message_content varchar(1048576) not null);", null);
         for(int i = 0; i < otherChatParticipantsID.length; i++)
         {
-            DatabaseManager.makeUpdate("insert into savedUsers values('" + otherChatParticipantsID[i] + "', '" + otherChatParticipantsDisplayName[i] + "');");
+            DatabaseManager.makeUpdate("insert into savedUsers values(?, ?);", new boolean[]{false, false}, otherChatParticipantsID[i], otherChatParticipantsDisplayName[i]);
         }
-        DatabaseManager.initializeDB();
+        //DatabaseManager.initializeDB();
 
         return true;
     }
@@ -1669,13 +1727,13 @@ public class NetworkManager
             }
             participants = participants.substring(0, participants.length() - 1);
 
-            DatabaseManager.makeUpdate("update chat set chat_type = '" + chatType + "', chat_name = '" + chatName + "', chat_participants = '" + participants + "' where chat_id = " + chatID + ";");
+            DatabaseManager.makeUpdate("update chat set chat_type = ?, chat_name = ?, chat_participants = ? where chat_id = " + chatID + ";", new boolean[]{false, false, false}, chatType, chatName, participants);
 
             for(int j = 0; j < participantsList.length; j++)
             {
                 String ID = participantsList[j][0];
                 String name = participantsList[j][1];
-                DatabaseManager.makeUpdate("insert into savedUsers values('" + ID + "', '" + name + "');");
+                DatabaseManager.makeUpdate("insert into savedUsers values(?, ?);", new boolean[]{false, false}, ID, name);
             }
         }
 
@@ -1688,7 +1746,7 @@ public class NetworkManager
         if(!success)
             return null;
 
-        DatabaseManager.initializeDB();
+        //DatabaseManager.initializeDB();
 
         return true;
     }
@@ -1750,15 +1808,15 @@ public class NetworkManager
         if(!success)
             return null;
 
-        DatabaseManager.makeUpdate("insert into savedUsers values('" + newUserID + "', '" + newUserDisplayName + "');");
-        String[][] currentChatParticipants = DatabaseManager.makeQuery("select chat_participants from chat where chat_id = " + chatID + ";");
+        DatabaseManager.makeUpdate("insert into savedUsers values(?, ?);", new boolean[]{false, false}, newUserID, newUserDisplayName);
+        String[][] currentChatParticipants = DatabaseManager.makeQuery("select chat_participants from chat where chat_id = " + chatID + ";", null);
         if(currentChatParticipants != null && currentChatParticipants.length > 0) {
             String newParticipantList = currentChatParticipants[0][0] + "," + newUserID;
             if(newParticipantList.charAt(0) == ',')
             {
                 newParticipantList = newParticipantList.substring(1);
             }
-            DatabaseManager.makeUpdate("update chat set chat_participants = '" + newParticipantList + "' where chat_id = " + chatID + ";");
+            DatabaseManager.makeUpdate("update chat set chat_participants = ? where chat_id = " + chatID + ";", new boolean[]{false}, newParticipantList);
         }
 
         return true;
@@ -1798,7 +1856,7 @@ public class NetworkManager
         if(!reply.equals("OK"))
             return false;
 
-        DatabaseManager.makeUpdate("update chat set chat_type = 'GROUP_LF' where chat_id = " + chatID + ";");
+        DatabaseManager.makeUpdate("update chat set chat_type = 'GROUP_LF' where chat_id = " + chatID + ";", null);
 
         return true;
     }
@@ -1842,7 +1900,168 @@ public class NetworkManager
         if(!success)
             return null;
 
-        DatabaseManager.makeUpdate("insert into savedUsers values('" + userAccountID + "', '" + userDisplayName + "');");
+        DatabaseManager.makeUpdate("delete from unknownUsers where account_id = ?;", new boolean[]{false}, userAccountID);
+
+        DatabaseManager.makeUpdate("insert into savedUsers values(?, ?);", new boolean[]{false, false}, userAccountID, userDisplayName);
+
+        return true;
+    }
+
+    synchronized public static Boolean retrieveUnknownChatInfo(String chatID)
+    {
+        if(!connected)
+            return null;
+        if(!loggedIn)
+            return null;
+
+        boolean success = sendToServer("GETCHINF " + chatID);
+        if(!success)
+            return null;
+        String reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("OK"))
+            return false;
+
+        success = sendToServer("DONE");
+        if(!success)
+            return null;
+
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(reply.equals("ERROR"))
+            return false;
+        String chatType = reply.substring(9);
+        success = sendToServer("OK");
+        if(!success)
+            return null;
+
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(reply.equals("ERROR"))
+            return false;
+        String chatName = reply.substring(9);
+        success = sendToServer("OK");
+        if(!success)
+            return null;
+
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(reply.equals("ERROR"))
+            return false;
+        String numberOfParticipants = reply.substring(9);
+        success = sendToServer("OK");
+        if(!success)
+            return null;
+
+        String[][] participantsList = new String[Integer.parseInt(numberOfParticipants)][2];
+        for(int i = 0; i < Integer.parseInt(numberOfParticipants); i++)
+        {
+            reply = receiveFromServer();
+            if(reply == null)
+                return null;
+            if(reply.equals("ERROR"))
+                return false;
+            participantsList[i][0] = reply.substring(6);
+            success = sendToServer("OK");
+            if(!success)
+                return null;
+
+            reply = receiveFromServer();
+            if(reply == null)
+                return null;
+            if(reply.equals("ERROR"))
+                return false;
+            participantsList[i][1] = reply.substring(8);
+            success = sendToServer("OK");
+            if(!success)
+                return null;
+        }
+        String participants = "";
+        for(int j = 0; j < participantsList.length; j++)
+        {
+            participants = participants + participantsList[j][0] + ",";
+        }
+        participants = participants.substring(0, participants.length() - 1);
+
+        reply = receiveFromServer();
+        if(reply == null)
+            return null;
+        if(!reply.equals("DONE"))
+            return false;
+        success = sendToServer("OK");
+        if(!success)
+            return null;
+
+        //TODO: Find a way to generate and synchronize chat key and iv either locally or over the network
+        String chatKey = "";
+        String chatIV = "";
+        if(chatType.equals("PERSONAL"))
+        {
+            chatKey = EncryptionManager.generateDeterministicKeyForPersonalChats(ConfigManager.getAccountID(), participantsList[0][0]);
+            chatIV = EncryptionManager.generateDeterministicInitializationVectorForPersonalChats(ConfigManager.getAccountID(), participantsList[0][0]);
+        }
+        else if(chatType.equals("GROUP"))
+        {
+            chatKey = EncryptionManager.generateDeterministicKeyForGroupChats(chatName, chatID);
+            chatIV = EncryptionManager.generateDeterministicInitializationVectorForGroupChats(chatName, chatID);
+        }
+
+        for(int i = 0; i < participantsList.length; i++)
+        {
+            String ID = participantsList[i][0];
+            String name = participantsList[i][1];
+            DatabaseManager.makeUpdate("insert into savedUsers values(?, ?);", new boolean[]{false, false}, ID, name);
+        }
+
+        DatabaseManager.makeUpdate("delete from unknownChats where chat_id = " + chatID + ";", null);
+
+        DatabaseManager.makeUpdate("insert into chat values(" + chatID + ", ?, ?, ?, ?, ?, 0);", new boolean[]{false, false, false, false, false}, chatKey, chatIV, chatType, chatName, participants);
+
+        // TODO: CHANGE MESSAGE TABLE SCHEMA HERE AS WELL AS IN DATABASE MANAGER
+        DatabaseManager.makeUpdate("create table chat" + chatID + "(message_id number(64) primary key not null, from_account_id char(16) not null, sent_to_server integer(2) not null, message_timestamp number(64) not null, message_type varchar(16) not null, message_content varchar(1048576) not null);", null);
+
+        String[][] uncategorizedMessages = DatabaseManager.makeQuery("select * from uncategorizedChatMessages where chat_id = " + chatID + ";", null);
+        if(uncategorizedMessages != null && uncategorizedMessages.length > 0)
+        {
+            for(int i = 0; i < uncategorizedMessages.length; i++) {
+                String messageID = uncategorizedMessages[i][1];
+                String senderAccountID = uncategorizedMessages[i][2];
+                String messageTimestamp = uncategorizedMessages[i][4];
+                String messageType = uncategorizedMessages[i][5];
+                String encryptedMessage = uncategorizedMessages[i][6];
+                String message;
+                String documentSize = "0";
+                if(messageType.equals("TEXT"))
+                {
+                    message = EncryptionManager.decryptText(encryptedMessage, chatKey, chatIV);
+                }
+                else if(messageType.equals("DOCUMENT"))
+                {
+                    message = EncryptionManager.decryptText(encryptedMessage, chatKey, chatIV);
+                    documentSize = message.substring(message.indexOf('|') + 1);
+                    message = message.substring(0, message.indexOf('|'));
+                }
+                else {
+                    message = messageType;
+                }
+
+                if ((new BigInteger(DatabaseManager.makeQuery("select last_message_timestamp from chat where chat_id = " + chatID + ";", null)[0][0])).compareTo(new BigInteger(messageTimestamp)) == -1) {
+                    DatabaseManager.makeUpdate("update chat set last_message_timestamp = " + messageTimestamp + " where chat_id = " + chatID + ";", null);
+                }
+
+                DatabaseManager.makeUpdate("insert into chat" + chatID + " values(" + messageID + ", ?, 2, " + messageTimestamp + ", ?, ?);", new boolean[]{false, false, false}, senderAccountID, messageType, message);
+                if(messageType.equals("DOCUMENT"))
+                {
+                    DatabaseManager.makeUpdate("update mediaMessagesDetails set file_size_in_bytes = ? where chat_id = " + chatID + " and message_id = " + messageID + ";", new boolean[]{false}, documentSize);
+                }
+
+                DatabaseManager.makeUpdate("delete from uncategorizedChatMessages where chat_id = " + chatID + " and message_id = " + messageID + ";", null);
+            }
+        }
 
         return true;
     }

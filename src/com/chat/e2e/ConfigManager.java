@@ -15,7 +15,7 @@ public class ConfigManager
 
 
 
-    private static String clientVersion = "1.2.1";
+    private static String clientVersion = "1.3.4";
     private static String accountID = "0000000000000000";
     private static String accountUsername = "anonymous";
     private static String accountDisplayName = "anonymous";
@@ -26,8 +26,8 @@ public class ConfigManager
     private static String serverPortAddress = "3737";
     private static String clientPortAddressType = "Dynamic";
     private static String clientPortAddress = "7373";
-    private static String connectionProbeTimePeriod = "20";
-    private static String initialNumberOfMessagesToLoad = "100";
+    private static String connectionProbeTimePeriod = "10";
+    private static String initialNumberOfMessagesToLoad = "50";
     private static String appDataFolder = appFolderPath;
     private static String currentTheme = "Arc Dark (Material)";
     private static String previousWindowState = "windowed,800,600";
@@ -271,7 +271,7 @@ public class ConfigManager
             return;
         }
 
-        clientVersion = configData.getProperty("clientVersion");
+        //clientVersion = configData.getProperty("clientVersion");
         accountID = configData.getProperty("accountID");
         accountUsername = configData.getProperty("accountUsername");
         accountDisplayName = configData.getProperty("accountDisplayName");

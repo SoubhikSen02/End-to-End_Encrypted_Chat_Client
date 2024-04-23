@@ -292,7 +292,7 @@ public class NewChatCreateDialog extends javax.swing.JDialog {
 
     private void savedUsersButtonActionPerformed(java.awt.event.ActionEvent evt) {
         // TODO add your handling code here:
-        String[][] savedUsers = DatabaseManager.makeQuery("select display_name, account_id from savedUsers;");
+        String[][] savedUsers = DatabaseManager.makeQuery("select display_name, account_id from savedUsers;", null);
         if(savedUsers != null && savedUsers.length > 0) {
             if(personalChatButton.isSelected())
                 new SelectFromSavedUsersDialog(this, true, savedUsers, SelectFromSavedUsersDialog.SINGLE_SELECTION_MODE);

@@ -8,8 +8,12 @@ package com.chat.e2e;
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -46,6 +50,7 @@ public class StorageSettingsPanel extends javax.swing.JPanel {
         appStorageAvailableLabel = new javax.swing.JLabel();
         appStorageUsedField = new javax.swing.JTextField();
         appStorageAvailableField = new javax.swing.JTextField();
+        openFolderButton = new javax.swing.JButton();
 
         dataFolderChooser.setApproveButtonText("Select");
         dataFolderChooser.setDialogTitle("Choose new app data folder");
@@ -144,6 +149,16 @@ public class StorageSettingsPanel extends javax.swing.JPanel {
             }
         });
 
+        openFolderButton.setIcon(new javax.swing.ImageIcon(Objects.requireNonNull(StorageSettingsPanel.class.getClassLoader().getResource("files-and-folders (1).png")))); // NOI18N
+        openFolderButton.setFocusPainted(false);
+        openFolderButton.setToolTipText("View folder");
+        openFolderButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                openAppFolderButtonClicked();
+            }
+        });
+
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(this);
         this.setLayout(layout);
         layout.setHorizontalGroup(
@@ -160,7 +175,10 @@ public class StorageSettingsPanel extends javax.swing.JPanel {
                                                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                                                         .addComponent(appStorageAvailableField, javax.swing.GroupLayout.DEFAULT_SIZE, 285, Short.MAX_VALUE)
                                                         .addComponent(appStorageUsedField)))
-                                        .addComponent(appDataFolderField))
+                                        .addGroup(layout.createSequentialGroup()
+                                                .addComponent(appDataFolderField)
+                                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                                .addComponent(openFolderButton)))
                                 .addGap(33, 33, 33))
         );
         layout.setVerticalGroup(
@@ -169,7 +187,9 @@ public class StorageSettingsPanel extends javax.swing.JPanel {
                                 .addGap(21, 21, 21)
                                 .addComponent(appDataFolderLabel)
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                                .addComponent(appDataFolderField, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                                        .addComponent(appDataFolderField, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                        .addComponent(openFolderButton))
                                 .addGap(18, 18, 18)
                                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                                         .addComponent(appStorageUsedLabel)
@@ -178,7 +198,7 @@ public class StorageSettingsPanel extends javax.swing.JPanel {
                                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                                         .addComponent(appStorageAvailableLabel)
                                         .addComponent(appStorageAvailableField, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
-                                .addContainerGap(33, Short.MAX_VALUE))
+                                .addContainerGap(32, Short.MAX_VALUE))
         );
     }// </editor-fold>
 
@@ -205,6 +225,17 @@ public class StorageSettingsPanel extends javax.swing.JPanel {
         // TODO add your handling code here:
     }
 
+    private void openAppFolderButtonClicked()
+    {
+        try {
+            Desktop.getDesktop().browse(new File(appDataFolderField.getText()).toURI());
+        }
+        catch (Exception e)
+        {
+            //System.out.println(e);
+        }
+    }
+
 
     // Variables declaration - do not modify
     private javax.swing.JButton appDataFolderBrowseButton;
@@ -215,6 +246,7 @@ public class StorageSettingsPanel extends javax.swing.JPanel {
     private javax.swing.JTextField appStorageUsedField;
     private javax.swing.JLabel appStorageUsedLabel;
     private javax.swing.JFileChooser dataFolderChooser;
+    private javax.swing.JButton openFolderButton;
     // End of variables declaration
 
     public JTextField getAppDataFolderField()

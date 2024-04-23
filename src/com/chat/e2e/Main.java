@@ -20,9 +20,12 @@ public class Main {
 
     public static void main(String[] args)
     {
-        //FlatArcDarkIJTheme.setup();
         ConfigManager.initializeConfig();
         LogManager.initializeLog();
+//        String key = EncryptionManager.findDatabaseKey(ConfigManager.getAccountID(), ConfigManager.getAccountUsername());
+//        String IV = EncryptionManager.findDatabaseIV(ConfigManager.getAccountID(), ConfigManager.getAccountUsername());
+//        String dbDecryptedFilePath = ConfigManager.getAppFolderPath() + "\\database" + "\\" + ConfigManager.getAccountID() + "_main.db";
+//        boolean success = EncryptionManager.encryptFile(dbDecryptedFilePath, key, IV);
         ThemeManager.initializeTheme();
         DatabaseManager.initializeDB();
 
@@ -90,7 +93,7 @@ public class Main {
 //        System.out.println("Key 1: " + key1 + "\nKey 2: " + key2);
 //        System.out.println("IV 1: " + iv1 + "\nIV 2: " + iv2);
 //
-//        String originalPlainText = "Hello world!!\nHoly fuck it actually works😮";
+//        String originalPlainText = "Hello world!!";
 //
 //        System.out.println("Original plain text: " + originalPlainText);
 //

@@ -163,7 +163,7 @@ public class GroupChatAddUserDialog extends javax.swing.JDialog {
 
     private void savedUsersButtonActionPerformed(java.awt.event.ActionEvent evt) {
         // TODO add your handling code here:
-        String[][] savedUsers = DatabaseManager.makeQuery("select display_name, account_id from savedUsers;");
+        String[][] savedUsers = DatabaseManager.makeQuery("select display_name, account_id from savedUsers;", null);
         if(savedUsers != null && savedUsers.length > 0) {
             new SelectFromSavedUsersDialog(this, true, savedUsers, SelectFromSavedUsersDialog.SINGLE_SELECTION_MODE);
         }
@@ -203,6 +203,15 @@ public class GroupChatAddUserDialog extends javax.swing.JDialog {
                 {
                     accountIdField.setBackground(new Color(255, 94, 116, 131));
                     JOptionPane.showMessageDialog(getSelfReference(), "Please enter a single valid account ID of length 16\nand containing only digits.", "Invalid account ID", JOptionPane.ERROR_MESSAGE);
+                    stopAddUserButtonAnimation();
+                    return null;
+                }
+
+                String[][] chatParticipants = DatabaseManager.makeQuery("select chat_participants from chat where chat_id = " + parentPanel.getActiveChatComponentReference().getChatID() + ";", null);
+                if(chatParticipants!= null && chatParticipants.length > 0 && chatParticipants[0][0].contains(accountIdField.getText()))
+                {
+                    accountIdField.setBackground(new Color(255, 94, 116, 131));
+                    JOptionPane.showMessageDialog(getSelfReference(), "The given user is already part of the group.", "User already present", JOptionPane.ERROR_MESSAGE);
                     stopAddUserButtonAnimation();
                     return null;
                 }

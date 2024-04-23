@@ -26,6 +26,8 @@ public class SelectFromSavedUsersDialog extends javax.swing.JDialog {
     private String[][] savedUsersList;
     int selectionMode;
     private ArrayList<AbstractButton> tableButtonsList = new ArrayList<>();
+    private ArrayList<JLabel> nameFieldsList = new ArrayList<>();
+    private ArrayList<JLabel> idFieldsList = new ArrayList<>();
     private Dialog parentDialog;
     /**
      * Creates new form SelectFromSavedUsersDialog
@@ -40,6 +42,23 @@ public class SelectFromSavedUsersDialog extends javax.swing.JDialog {
         setTitle("Saved users");
         setLocationRelativeTo(parent);
         setVisible(true);
+    }
+
+    private void buttonSelected()
+    {
+        for(int i = 0; i < tableButtonsList.size(); i++)
+        {
+            if(tableButtonsList.get(i).isSelected()) {
+                tableButtonsList.get(i).setBorder(new SoftBevelBorder(SoftBevelBorder.RAISED));
+                nameFieldsList.get(i).setBorder(new SoftBevelBorder(SoftBevelBorder.RAISED));
+                idFieldsList.get(i).setBorder(new SoftBevelBorder(SoftBevelBorder.RAISED));
+            }
+            else {
+                tableButtonsList.get(i).setBorder(new SoftBevelBorder(SoftBevelBorder.LOWERED));
+                nameFieldsList.get(i).setBorder(new SoftBevelBorder(SoftBevelBorder.LOWERED));
+                idFieldsList.get(i).setBorder(new SoftBevelBorder(SoftBevelBorder.LOWERED));
+            }
+        }
     }
 
     /**
@@ -106,6 +125,13 @@ public class SelectFromSavedUsersDialog extends javax.swing.JDialog {
             //selectButton.setFocusPainted(false);
             selectButton.setBorderPainted(true);
             selectButton.setBorder(new SoftBevelBorder(SoftBevelBorder.LOWERED));
+            selectButton.setFocusPainted(false);
+            selectButton.addActionListener(new ActionListener() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    buttonSelected();
+                }
+            });
             insideContainer.add(selectButton, layoutConstraints);
             tableButtonsList.add(selectButton);
 
@@ -117,6 +143,7 @@ public class SelectFromSavedUsersDialog extends javax.swing.JDialog {
             nameField.setBorder(new SoftBevelBorder(SoftBevelBorder.LOWERED));
             nameField.setHorizontalAlignment(JLabel.LEFT);
             insideContainer.add(nameField, layoutConstraints);
+            nameFieldsList.add(nameField);
 
             layoutConstraints.gridwidth = GridBagConstraints.REMAINDER;
 
@@ -124,6 +151,7 @@ public class SelectFromSavedUsersDialog extends javax.swing.JDialog {
             accIdField.setBorder(new SoftBevelBorder(SoftBevelBorder.LOWERED));
             accIdField.setHorizontalAlignment(JLabel.CENTER);
             insideContainer.add(accIdField, layoutConstraints);
+            idFieldsList.add(accIdField);
         }
 
         outsideContainer.add(insideContainer, BorderLayout.NORTH);

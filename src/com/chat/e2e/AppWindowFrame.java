@@ -9,12 +9,33 @@ import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
 import java.io.IOException;
+import java.util.Timer;
+import java.util.TimerTask;
 
 /**
  *
  * @author Soubhik
  */
 public class AppWindowFrame extends javax.swing.JFrame {
+
+    int currentWidth;
+    private TimerTask windowResizeChatPanelUpdateTask = new TimerTask() {
+        @Override
+        public void run() {
+            if(WindowManager.getCurrentPanel().equals("UserChatPanel"))
+            {
+                if(Math.abs(currentWidth - getWidth()) > 10) {
+                    currentWidth = getWidth();
+                    WindowManager.getChatPanelReference().updateFromDB(ChatMainPanel.KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+                }
+            }
+            else
+            {
+                currentWidth = getWidth();
+            }
+        }
+    };
+    public java.util.Timer chatPanelUpdateTimer;
 
     /**
      * Creates new form appWindowFrame
@@ -23,7 +44,8 @@ public class AppWindowFrame extends javax.swing.JFrame {
         initComponents();
         appWindowPanel.setLayout(new GridBagLayout());
         setLocationRelativeTo(null);
-        setSize(800, 600);
+        setSize(Integer.parseInt(ConfigManager.getPreviousWindowState().split(",")[1]), Integer.parseInt(ConfigManager.getPreviousWindowState().split(",")[2]));
+        //setSize(800, 600);
         setMinimumSize(new Dimension(800, 600));
         WindowManager.start(this);
 
@@ -42,6 +64,8 @@ public class AppWindowFrame extends javax.swing.JFrame {
 
             @Override
             public void componentResized(ComponentEvent e) {
+                //System.out.println(++numberOfCalls);
+
                 try {
                     if (robot == null)
                         robot = new Robot();
@@ -59,10 +83,34 @@ public class AppWindowFrame extends javax.swing.JFrame {
 
                 if(getExtendedState() == JFrame.MAXIMIZED_BOTH)
                 {
-                    ConfigManager.setPreviousWindowState("fullscreen,800,600");
+                    if(ConfigManager.getPreviousWindowState().split(",")[0].equals("windowed"))
+                    {
+                        if(WindowManager.getCurrentPanel().equals("UserChatPanel"))
+                        {
+                            WindowManager.getChatPanelReference().updateFromDB(ChatMainPanel.KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+                        }
+                    }
+                    ConfigManager.setPreviousWindowState("fullscreen," + ConfigManager.getPreviousWindowState().split(",")[1] + "," + ConfigManager.getPreviousWindowState().split(",")[2]);
                 }
                 else
                 {
+                    if(ConfigManager.getPreviousWindowState().split(",")[0].equals("fullscreen"))
+                    {
+                        if(WindowManager.getCurrentPanel().equals("UserChatPanel"))
+                        {
+                            WindowManager.getChatPanelReference().updateFromDB(ChatMainPanel.KEEP_MESSAGE_LIST_AT_CURRENT_SCROLL_POSITION_WHEN_REFRESHING_FOR_ANY_REASON);
+                        }
+                    }
+                    else
+                    {
+                        //if previous state was also windowed but window size changed
+//                        if(!updateTimerRunning)
+//                        {
+//                            updateTimerRunning = true;
+//                            chatPanelUpdateTimer = new Timer();
+//                            chatPanelUpdateTimer.schedule(windowResizeChatPanelUpdateTask, 1000);
+//                        }
+                    }
                     Dimension size = getSize();
                     ConfigManager.setPreviousWindowState("windowed," + size.width + "," + size.height);
                 }
@@ -70,6 +118,11 @@ public class AppWindowFrame extends javax.swing.JFrame {
         });
 
         setVisible(true);
+
+        currentWidth = getWidth();
+
+        chatPanelUpdateTimer = new Timer();
+        chatPanelUpdateTimer.schedule(windowResizeChatPanelUpdateTask, 5000, 1000);
 
 //        try {
 //            Font font = Font.createFont(Font.TRUETYPE_FONT, new File("D:\\download\\Noto_Emoji (1)\\NotoEmoji-VariableFont_wght.ttf"));

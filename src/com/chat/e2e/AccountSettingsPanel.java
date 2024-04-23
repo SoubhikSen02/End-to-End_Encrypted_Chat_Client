@@ -27,6 +27,7 @@ public class AccountSettingsPanel extends javax.swing.JPanel {
         parentDialog = parent;
         if(accountIdField.getText().equals("0000000000000000"))
         {
+            accountIdCopyButton.setEnabled(false);
             displayNameChangeButton.setEnabled(false);
             passwordChangeButton.setEnabled(false);
             savedUsersManageButton.setEnabled(false);

@@ -18,6 +18,11 @@ public class ThemeManager
         //UIManager.put( "Label.font", new Font("Calibri", Font.PLAIN, 12) );
         UIManager.put( "MenuItem.minimumIconSize", new Dimension() );
         //UIManager.put("Label.arc", 999);
+
+        ToolTipManager.sharedInstance().setDismissDelay(Integer.MAX_VALUE);
+
+        //FlatAnimatedLafChange.duration = 500;
+        //FlatAnimatedLafChange.resolution = 50;
     }
 
     public static void changeTheme(String newTheme, boolean animated)
